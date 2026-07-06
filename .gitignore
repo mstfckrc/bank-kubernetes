@@ -6,6 +6,7 @@
 
 # Güvenlik: Gerçek Şifrelerin Bulunduğu K8s Secret Dosyası
 00-infrastructure/bank-secret.yaml
+00-infrastructure/bank-configmap.yaml
 
 # IDE ve İşletim Sistemi Kalıntıları
 .vscode/
