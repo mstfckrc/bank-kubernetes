@@ -1,0 +1,387 @@
+# ================= 1. BEYİN DOSYALARI (ConfigMaps) =================
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: monitoring-config
+  namespace: default
+data:
+  prometheus.yml: |
+    global:
+      scrape_interval: 15s
+      evaluation_interval: 15s
+
+    alerting:
+      alertmanagers:
+        - static_configs:
+            - targets:
+              - 'alertmanager:9093'
+
+    rule_files:
+      - "alert.rules.yml"
+
+    scrape_configs:
+      - job_name: 'prometheus'
+        static_configs:
+          - targets: ['localhost:9090']
+
+      - job_name: 'cadvisor'
+        kubernetes_sd_configs:
+          - role: endpoints
+        relabel_configs:
+          - source_labels: [__meta_kubernetes_service_name]
+            action: keep
+            regex: cadvisor
+          - source_labels: [__meta_kubernetes_endpoint_node_name]
+            target_label: nodename
+        # 🚀 ESTETİK MÜDAHALE: Karmaşık ID'leri eziyor, yerlerine temiz Pod isimlerini yazdırıyoruz
+        metric_relabel_configs:
+          - source_labels: [pod]
+            regex: (.+)
+            target_label: name
+            action: replace
+          - source_labels: [pod]
+            regex: (.+)
+            target_label: container
+            action: replace
+          - source_labels: [pod]
+            regex: (.+)
+            target_label: id
+            action: replace
+
+      - job_name: 'node_exporter'
+        kubernetes_sd_configs:
+          - role: endpoints
+        relabel_configs:
+          - source_labels: [__meta_kubernetes_service_name]
+            action: keep
+            regex: node-exporter
+          - source_labels: [__meta_kubernetes_endpoint_node_name]
+            target_label: nodename
+
+      - job_name: 'bank_microservices'
+        metrics_path: '/actuator/prometheus'
+        static_configs:
+          - targets:
+            - 'backend:8080'
+            - 'auth-service:8086'
+            - 'bill-service:8084'
+            - 'corporate-service:8085'
+            - 'currency-service:8083'
+            - 'notification-service:8082'
+            - 'api-gateway:8081'
+            - 'discovery-server:8761'
+
+  alert.rules.yml: |
+    groups:
+      - name: KarargahAlarmlari
+        rules:
+          - alert: KonteynerCoktu
+            expr: up == 0
+            for: 1m
+            labels:
+              severity: critical
+            annotations:
+              summary: "Kritik Hata: Konteyner kapandı!"
+              description: "Karargahtaki '{{ $labels.instance }}' isimli servis 1 dakikadır çevrimdışı."
+
+          - alert: YuksekCpuKullanimi
+            expr: 100 - (avg by(instance) (rate(node_cpu_seconds_total{mode="idle"}[5m])) * 100) > 90
+            for: 5m
+            labels:
+              severity: warning
+            annotations:
+              summary: "Uyarı: Yüksek CPU Kullanımı!"
+              description: "Ubuntu VM işlemci yükü 5 dakikadır %90'ın üzerinde (Şu an: {{ $value }}%)."
+
+          - alert: KritikRamSeviyesi
+            expr: (node_memory_MemTotal_bytes - node_memory_MemAvailable_bytes) / node_memory_MemTotal_bytes * 100 > 95
+            for: 3m
+            labels:
+              severity: critical
+            annotations:
+              summary: "Kritik Hata: RAM Tükeniyor!"
+              description: "Ubuntu VM bellek doluluğu 3 dakikadır %95'in üzerinde (Şu an: {{ $value }}%)."
+
+  alertmanager.yml: |
+    global:
+      resolve_timeout: 5m
+    route:
+      group_by: ['alertname']
+      group_wait: 10s
+      group_interval: 10s
+      repeat_interval: 1h
+      receiver: 'varsayilan-log-alici'
+    receivers:
+    - name: 'varsayilan-log-alici'
+      webhook_configs:
+      - url: 'http://127.0.0.1:5000/alert-placeholder'
+---
+# ================= 1.5. KİMLİK VE YETKİLENDİRME (RBAC) =================
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: prometheus
+  namespace: default
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: prometheus
+rules:
+- apiGroups: [""]
+  resources: ["nodes", "nodes/proxy", "services", "endpoints", "pods"]
+  verbs: ["get", "list", "watch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: prometheus
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: prometheus
+subjects:
+- kind: ServiceAccount
+  name: prometheus
+  namespace: default
+---
+# ================= 2. PROMETHEUS =================
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: prometheus
+  namespace: default
+spec:
+  replicas: 1
+  selector: { matchLabels: { app: prometheus } }
+  template:
+    metadata: { labels: { app: prometheus } }
+    spec:
+      serviceAccountName: prometheus  # <-- YETKİLİ KİMLİK BURADA ATANDI
+      containers:
+      - name: prometheus
+        image: prom/prometheus:latest
+        ports: [{ containerPort: 9090 }]
+        command: ["/bin/prometheus"]
+        args:
+          - '--config.file=/etc/prometheus/prometheus.yml'
+          - '--storage.tsdb.path=/prometheus'
+          - '--storage.tsdb.retention.time=3d'
+        volumeMounts:
+        - name: prometheus-config-volume
+          mountPath: /etc/prometheus/prometheus.yml
+          subPath: prometheus.yml
+        - name: prometheus-config-volume
+          mountPath: /etc/prometheus/alert.rules.yml
+          subPath: alert.rules.yml
+      volumes:
+      - name: prometheus-config-volume
+        configMap:
+          name: monitoring-config
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: prometheus
+  namespace: default
+spec:
+  selector: { app: prometheus }
+  ports: [{ port: 9090, targetPort: 9090 }]
+---
+# ================= 3. GRAFANA =================
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: pvc-grafana
+  namespace: default
+spec:
+  accessModes: ["ReadWriteOnce"]
+  storageClassName: longhorn
+  resources:
+    requests:
+      storage: 1Gi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: grafana
+  namespace: default
+spec:
+  replicas: 1
+  selector: { matchLabels: { app: grafana } }
+  template:
+    metadata: { labels: { app: grafana } }
+    spec:
+      # 🚀 KRİTİK DOKUNUŞ: Longhorn diskinin sahibini Grafana (User: 472) yapıyoruz
+      securityContext:
+        fsGroup: 472
+        runAsUser: 472
+      containers:
+      - name: grafana
+        image: grafana/grafana:latest
+        ports: [{ containerPort: 3000 }]
+        env:
+        - name: GF_SECURITY_ADMIN_USER
+          valueFrom: { secretKeyRef: { name: bank-secrets, key: GRAFANA_USER, optional: true } }
+        - name: GF_SECURITY_ADMIN_PASSWORD
+          valueFrom: { secretKeyRef: { name: bank-secrets, key: GRAFANA_PASS, optional: true } }
+        # 🚀 Longhorn diskini Grafana'nın veri klasörüne monte ediyoruz
+        volumeMounts:
+        - name: grafana-storage
+          mountPath: /var/lib/grafana
+      volumes:
+      - name: grafana-storage
+        persistentVolumeClaim:
+          claimName: pvc-grafana
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: grafana
+  namespace: default
+spec:
+  selector: { app: grafana }
+  ports: [{ port: 3000, targetPort: 3000 }]
+---
+# ================= 4. ALERTMANAGER =================
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: alertmanager
+  namespace: default
+spec:
+  replicas: 1
+  selector: { matchLabels: { app: alertmanager } }
+  template:
+    metadata: { labels: { app: alertmanager } }
+    spec:
+      containers:
+      - name: alertmanager
+        image: quay.io/prometheus/alertmanager:v0.27.0
+        ports: [{ containerPort: 9093 }]
+        volumeMounts:
+        - name: alertmanager-config-volume
+          mountPath: /etc/alertmanager/alertmanager.yml
+          subPath: alertmanager.yml
+      volumes:
+      - name: alertmanager-config-volume
+        configMap:
+          name: monitoring-config
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: alertmanager
+  namespace: default
+spec:
+  selector: { app: alertmanager }
+  ports: [{ port: 9093, targetPort: 9093 }]
+---
+# ================= 5. NODE EXPORTER =================
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: node-exporter
+  namespace: default
+spec:
+  selector: { matchLabels: { app: node-exporter } }
+  template:
+    metadata: { labels: { app: node-exporter } }
+    spec:
+      hostNetwork: true
+      containers:
+      - name: node-exporter
+        image: quay.io/prometheus/node-exporter:v1.8.0
+        ports: [{ containerPort: 9100 }]
+        command: ["/bin/node_exporter"]
+        args:
+          - '--path.procfs=/host/proc'
+          - '--path.rootfs=/rootfs'
+          - '--path.sysfs=/host/sys'
+          - '--collector.filesystem.mount-points-exclude=^/(sys|proc|dev|host|etc)($$|/)'
+        volumeMounts:
+        - name: proc
+          mountPath: /host/proc
+          readOnly: true
+        - name: sys
+          mountPath: /host/sys
+          readOnly: true
+        - name: rootfs
+          mountPath: /rootfs
+          readOnly: true
+      volumes:
+      - name: proc
+        hostPath: { path: /proc }
+      - name: sys
+        hostPath: { path: /sys }
+      - name: rootfs
+        hostPath: { path: / }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: node-exporter
+  namespace: default
+spec:
+  selector: { app: node-exporter }
+  ports: [{ port: 9100, targetPort: 9100 }]
+---
+# ================= 6. cADVISOR =================
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: cadvisor
+  namespace: default
+spec:
+  selector: { matchLabels: { app: cadvisor } }
+  template:
+    metadata: { labels: { app: cadvisor } }
+    spec:
+      automountServiceAccountToken: false
+      containers:
+      - name: cadvisor
+        image: gcr.io/cadvisor/cadvisor:v0.49.2
+        ports: [{ containerPort: 8080 }]
+        securityContext:
+          privileged: true
+        # 🚀 KESİN ÇÖZÜM: K3s'in containerd soketini ve namespace'ini cAdvisor'a öğretiyoruz
+        args:
+          - "--containerd=/run/k3s/containerd/containerd.sock"
+          - "--containerd-namespace=k8s.io"
+        volumeMounts:
+        - name: rootfs
+          mountPath: /rootfs
+          readOnly: true
+        - name: var-run
+          mountPath: /var/run
+          readOnly: false
+        - name: sys
+          mountPath: /sys
+          readOnly: true
+        - name: k3s-containerd
+          mountPath: /run/k3s/containerd/containerd.sock
+          readOnly: true
+        - name: disk
+          mountPath: /dev/disk
+          readOnly: true
+      volumes:
+      - name: rootfs
+        hostPath: { path: / }
+      - name: var-run
+        hostPath: { path: /var/run }
+      - name: sys
+        hostPath: { path: /sys }
+      # K3s'in özel soket yolunu fiziksel makineden pod'a aktarıyoruz
+      - name: k3s-containerd
+        hostPath: { path: /run/k3s/containerd/containerd.sock }
+      - name: disk
+        hostPath: { path: /dev/disk }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: cadvisor
+  namespace: default
+spec:
+  selector: { app: cadvisor }
+  ports: [{ port: 8080, targetPort: 8080 }]

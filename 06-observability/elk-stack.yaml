@@ -1,0 +1,148 @@
+# ================= 1. BEYİN DOSYASI (ConfigMap) =================
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: logstash-config
+  namespace: default
+data:
+  logstash.conf: |
+    input {
+      tcp {
+        port => 5000
+        codec => json_lines
+      }
+    }
+    filter {
+    }
+    output {
+      elasticsearch {
+        hosts => ["http://elasticsearch:9200"]
+        index => "bank-logs-%{+YYYY.MM.dd}"
+      }
+      stdout {
+        codec => rubydebug
+      }
+    }
+---
+# ================= 2. ELASTICSEARCH =================
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: elasticsearch
+  namespace: default
+spec:
+  replicas: 1
+  selector: { matchLabels: { app: elasticsearch } }
+  template:
+    metadata: { labels: { app: elasticsearch } }
+    spec:
+      containers:
+      - name: elasticsearch
+        image: elasticsearch:8.12.2
+        ports: [{ containerPort: 9200 }]
+        env:
+        - name: discovery.type
+          value: "single-node"
+        - name: xpack.security.enabled
+          value: "false"
+        - name: ES_JAVA_OPTS
+          value: "-Xms512m -Xmx512m"
+        # 🚀 DOCKER COMPOSE: healthcheck Birebir Çevirisi
+        readinessProbe:
+          exec:
+            command: ["sh", "-c", "curl -s http://localhost:9200 >/dev/null || exit 1"]
+          initialDelaySeconds: 15
+          periodSeconds: 15
+          failureThreshold: 10
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: elasticsearch
+  namespace: default
+spec:
+  selector: { app: elasticsearch }
+  ports: [{ port: 9200, targetPort: 9200 }]
+---
+# ================= 3. LOGSTASH =================
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: logstash
+  namespace: default
+spec:
+  replicas: 1
+  selector: { matchLabels: { app: logstash } }
+  template:
+    metadata: { labels: { app: logstash } }
+    spec:
+      # 🚀 DOCKER COMPOSE: depends_on: elasticsearch (service_healthy) Birebir Çevirisi
+      initContainers:
+      - name: wait-for-elasticsearch
+        image: busybox:1.36
+        command: ['sh', '-c', 'until nc -z elasticsearch 9200; do echo "Elasticsearch bekleniyor..."; sleep 5; done;']
+      containers:
+      - name: logstash
+        image: logstash:8.12.2
+        ports: [{ containerPort: 5000 }]
+        env:
+        - name: LS_JAVA_OPTS
+          value: "-Xms256m -Xmx256m"
+        volumeMounts:
+        - name: config-volume
+          mountPath: /usr/share/logstash/pipeline/logstash.conf
+          subPath: logstash.conf
+        # 🚀 DOCKER COMPOSE: healthcheck Birebir Çevirisi
+        readinessProbe:
+          exec:
+            command: ["sh", "-c", "curl -s http://localhost:9600 >/dev/null || exit 1"]
+          initialDelaySeconds: 15
+          periodSeconds: 15
+          failureThreshold: 12
+      volumes:
+      - name: config-volume
+        configMap:
+          name: logstash-config
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: logstash
+  namespace: default
+spec:
+  selector: { app: logstash }
+  ports: [{ port: 5000, targetPort: 5000 }]
+---
+# ================= 4. KIBANA =================
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: kibana
+  namespace: default
+spec:
+  replicas: 1
+  selector: { matchLabels: { app: kibana } }
+  template:
+    metadata: { labels: { app: kibana } }
+    spec:
+      # 🚀 DOCKER COMPOSE: depends_on: elasticsearch (service_healthy) Birebir Çevirisi
+      initContainers:
+      - name: wait-for-elasticsearch
+        image: busybox:1.36
+        command: ['sh', '-c', 'until nc -z elasticsearch 9200; do echo "Elasticsearch bekleniyor..."; sleep 5; done;']
+      containers:
+      - name: kibana
+        image: kibana:8.12.2
+        ports: [{ containerPort: 5601 }]
+        env:
+        - name: ELASTICSEARCH_HOSTS
+          value: "http://elasticsearch:9200"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: kibana
+  namespace: default
+spec:
+  selector: { app: kibana }
+  ports: [{ port: 5601, targetPort: 5601 }]

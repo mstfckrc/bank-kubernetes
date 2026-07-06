@@ -1,0 +1,56 @@
+# 1. Disk Talebi (PVC)
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: pvc-postgres-core
+  namespace: default
+spec:
+  accessModes: ["ReadWriteOnce"]
+  storageClassName: longhorn
+  resources:
+    requests:
+      storage: 2Gi
+---
+# 2. Veritabanı Birliği (Deployment)
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: postgres-core
+  namespace: default
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: postgres-core
+  template:
+    metadata:
+      labels:
+        app: postgres-core
+    spec:
+      containers:
+      - name: postgres
+        image: postgres:15-alpine
+        ports:
+        - containerPort: 5432
+        env:
+        - name: POSTGRES_DB
+          value: "bank_core_db"
+        - name: POSTGRES_USER
+          valueFrom:
+            secretKeyRef:
+              name: bank-secrets
+              key: CORE_DB_USER
+        - name: POSTGRES_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: bank-secrets
+              key: CORE_DB_PASS
+        - name: PGDATA
+          value: "/var/lib/postgresql/data/pgdata"
+        volumeMounts:
+        - name: pgdata
+          mountPath: /var/lib/postgresql/data
+      volumes:
+      - name: pgdata
+        persistentVolumeClaim:
+          claimName: pvc-postgres-core

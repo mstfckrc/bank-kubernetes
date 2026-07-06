@@ -1,0 +1,48 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: frontend
+  namespace: default
+spec:
+  replicas: 1
+  selector: { matchLabels: { app: frontend } }
+  template:
+    metadata: { labels: { app: frontend } }
+    spec:
+      # 🚀 1. KALKAN: K8s İçin Harita Yaması (DNS Bypass)
+      hostAliases:
+      - ip: "192.168.56.51"
+        hostnames:
+        - "auth.bank.local"
+        - "api.bank.local"
+        - "app.bank.local"
+      containers:
+      - name: frontend
+        image: mstfckrc/frontend:v1
+        ports: [{ containerPort: 3000 }]
+        env:
+        # 🚀 2. KALKAN: Node.js Sertifika Bypass'ı
+        - name: NODE_TLS_REJECT_UNAUTHORIZED
+          value: "0"
+        # 🚀 3. KALKAN: Eksik Kimlik ve Adres Değişkenleri
+        - name: NEXT_PUBLIC_FRONTEND_URL
+          value: "https://app.bank.local"
+        - name: NEXT_PUBLIC_KEYCLOAK_URL
+          value: "https://auth.bank.local"
+        - name: KEYCLOAK_INTERNAL_URL
+          value: "https://auth.bank.local"
+        - name: KEYCLOAK_REALM
+          value: "bank-realm"
+        - name: KEYCLOAK_CLIENT_ID
+          value: "bank-auth-client"
+        - name: KEYCLOAK_CLIENT_SECRET
+          value: "wi7n1h8syiBLDd1qqSyaB3AE9AVjQSi5"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: frontend
+  namespace: default
+spec:
+  selector: { app: frontend }
+  ports: [{ port: 3000, targetPort: 3000 }]

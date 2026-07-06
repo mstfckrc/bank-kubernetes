@@ -1,0 +1,90 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: bank-ingress
+  namespace: default
+  annotations:
+    # kubernetes.io/ingress.class: "nginx" <-- BU SATIRI SİLDİK
+    nginx.ingress.kubernetes.io/proxy-buffer-size: "128k"
+    nginx.ingress.kubernetes.io/proxy-buffers-number: "4"
+    nginx.ingress.kubernetes.io/proxy-busy-buffers-size: "256k"
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+spec:
+  ingressClassName: nginx # 🚀 YENİ KURAL BURAYA EKLENDİ
+  tls:
+  - hosts:
+    - app.bank.local
+    - auth.bank.local
+    - api.bank.local
+    - eureka.bank.local
+    - docs.bank.local
+    - monitor.bank.local
+    - longhorn.bank.local
+    secretName: bank-local-tls
+  rules:
+  # 1. 🖥️ VİTRİN (Next.js Frontend)
+  - host: app.bank.local
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: frontend
+            port:
+              number: 3000
+  # 2. 🔐 KİMLİK ÜSSÜ (Keycloak)
+  - host: auth.bank.local
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: keycloak
+            port:
+              number: 8080
+  # 3. 🌟 SINIR KAPISI (API Gateway)
+  - host: api.bank.local
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: api-gateway
+            port:
+              number: 8081
+  # 4. 🏛️ NÜFUS DAİRESİ (Eureka)
+  - host: eureka.bank.local
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: discovery-server
+            port:
+              number: 8761
+  # 5. 📚 DOKÜMANTASYON VİTRİNİ (Swagger)
+  - host: docs.bank.local
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: api-gateway
+            port:
+              number: 8081
+  # 6. 📊 RADAR EKRANI (Grafana)
+  - host: monitor.bank.local
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: grafana
+            port:
+              number: 3000

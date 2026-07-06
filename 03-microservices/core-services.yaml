@@ -1,0 +1,294 @@
+# ================= 1. AUTH SERVICE =================
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: auth-service
+  namespace: default
+spec:
+  replicas: 1
+  selector: { matchLabels: { app: auth-service } }
+  template:
+    metadata: { labels: { app: auth-service } }
+    spec:
+      hostAliases:
+      - ip: "192.168.56.51"
+        hostnames:
+        - "auth.bank.local"
+      containers:
+      - name: auth-service
+        image: mstfckrc/auth-service:v1
+        ports: [{ containerPort: 8086 }]
+        readinessProbe:
+          httpGet:
+            path: /actuator/health
+            port: 8086
+          initialDelaySeconds: 45
+          periodSeconds: 10
+          failureThreshold: 6
+        envFrom:
+        - configMapRef: { name: bank-config }
+        - secretRef: { name: bank-secrets }
+        env:
+        - name: OAUTH_ISSUER_URI
+          value: "https://auth.bank.local/realms/bank-realm"
+        - name: KEYCLOAK_INTERNAL_URL
+          valueFrom: { configMapKeyRef: { name: bank-config, key: KC_INTERNAL_URL } }
+        - name: DB_URL
+          valueFrom: { configMapKeyRef: { name: bank-config, key: AUTH_DB_URL } }
+        - name: DB_USER
+          valueFrom: { secretKeyRef: { name: bank-secrets, key: AUTH_DB_USER } }
+        - name: DB_PASS
+          valueFrom: { secretKeyRef: { name: bank-secrets, key: AUTH_DB_PASS } }
+        - name: SPRING_RABBITMQ_HOST
+          valueFrom: { configMapKeyRef: { name: bank-config, key: RMQ_HOST } }
+        - name: SPRING_RABBITMQ_PORT
+          valueFrom: { configMapKeyRef: { name: bank-config, key: RMQ_PORT } }
+        - name: SPRING_RABBITMQ_USERNAME
+          valueFrom: { secretKeyRef: { name: bank-secrets, key: RMQ_USER } }
+        - name: SPRING_RABBITMQ_PASSWORD
+          valueFrom: { secretKeyRef: { name: bank-secrets, key: RMQ_PASS } }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: auth-service
+  namespace: default
+spec:
+  selector: { app: auth-service }
+  ports: [{ port: 8086, targetPort: 8086 }]
+---
+# ================= 2. CORE BACKEND =================
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: backend
+  namespace: default
+spec:
+  replicas: 1
+  selector: { matchLabels: { app: backend } }
+  template:
+    metadata: { labels: { app: backend } }
+    spec:
+      containers:
+      - name: backend
+        image: mstfckrc/backend:v1
+        ports: [{ containerPort: 8080 }]
+        readinessProbe:
+          httpGet:
+            path: /actuator/health
+            port: 8080
+          initialDelaySeconds: 45
+          periodSeconds: 10
+          failureThreshold: 6
+        envFrom:
+        - configMapRef: { name: bank-config }
+        - secretRef: { name: bank-secrets }
+        env:
+        - name: ELASTICSEARCH_URL
+          value: "http://elasticsearch:9200"
+        - name: DB_URL
+          valueFrom: { configMapKeyRef: { name: bank-config, key: CORE_DB_URL } }
+        - name: DB_USER
+          valueFrom: { secretKeyRef: { name: bank-secrets, key: CORE_DB_USER } }
+        - name: DB_PASS
+          valueFrom: { secretKeyRef: { name: bank-secrets, key: CORE_DB_PASS } }
+        - name: SPRING_RABBITMQ_HOST
+          valueFrom: { configMapKeyRef: { name: bank-config, key: RMQ_HOST } }
+        - name: SPRING_RABBITMQ_PORT
+          valueFrom: { configMapKeyRef: { name: bank-config, key: RMQ_PORT } }
+        - name: SPRING_RABBITMQ_USERNAME
+          valueFrom: { secretKeyRef: { name: bank-secrets, key: RMQ_USER } }
+        - name: SPRING_RABBITMQ_PASSWORD
+          valueFrom: { secretKeyRef: { name: bank-secrets, key: RMQ_PASS } }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: backend
+  namespace: default
+spec:
+  selector: { app: backend }
+  ports: [{ port: 8080, targetPort: 8080 }]
+---
+# ================= 3. CORPORATE SERVICE =================
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: corporate-service
+  namespace: default
+spec:
+  replicas: 1
+  selector: { matchLabels: { app: corporate-service } }
+  template:
+    metadata: { labels: { app: corporate-service } }
+    spec:
+      containers:
+      - name: corporate-service
+        image: mstfckrc/corporate-service:v1
+        ports: [{ containerPort: 8085 }]
+        readinessProbe:
+          httpGet:
+            path: /actuator/health
+            port: 8085
+          initialDelaySeconds: 45
+          periodSeconds: 10
+          failureThreshold: 6
+        envFrom:
+        - configMapRef: { name: bank-config }
+        - secretRef: { name: bank-secrets }
+        env:
+        - name: DB_URL
+          valueFrom: { configMapKeyRef: { name: bank-config, key: CORP_DB_URL } }
+        - name: DB_USER
+          valueFrom: { secretKeyRef: { name: bank-secrets, key: CORP_DB_USER } }
+        - name: DB_PASS
+          valueFrom: { secretKeyRef: { name: bank-secrets, key: CORP_DB_PASS } }
+        - name: SPRING_RABBITMQ_HOST
+          valueFrom: { configMapKeyRef: { name: bank-config, key: RMQ_HOST } }
+        - name: SPRING_RABBITMQ_PORT
+          valueFrom: { configMapKeyRef: { name: bank-config, key: RMQ_PORT } }
+        - name: SPRING_RABBITMQ_USERNAME
+          valueFrom: { secretKeyRef: { name: bank-secrets, key: RMQ_USER } }
+        - name: SPRING_RABBITMQ_PASSWORD
+          valueFrom: { secretKeyRef: { name: bank-secrets, key: RMQ_PASS } }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: corporate-service
+  namespace: default
+spec:
+  selector: { app: corporate-service }
+  ports: [{ port: 8085, targetPort: 8085 }]
+---
+# ================= 4. BILL SERVICE =================
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: bill-service
+  namespace: default
+spec:
+  replicas: 1
+  selector: { matchLabels: { app: bill-service } }
+  template:
+    metadata: { labels: { app: bill-service } }
+    spec:
+      containers:
+      - name: bill-service
+        image: mstfckrc/bill-service:v1
+        ports: [{ containerPort: 8084 }]
+        readinessProbe:
+          httpGet:
+            path: /actuator/health
+            port: 8084
+          initialDelaySeconds: 45
+          periodSeconds: 10
+          failureThreshold: 6
+        envFrom:
+        - configMapRef: { name: bank-config }
+        - secretRef: { name: bank-secrets }
+        env:
+        - name: DB_URL
+          valueFrom: { configMapKeyRef: { name: bank-config, key: BILL_DB_URL } }
+        - name: DB_USER
+          valueFrom: { secretKeyRef: { name: bank-secrets, key: BILL_DB_USER } }
+        - name: DB_PASS
+          valueFrom: { secretKeyRef: { name: bank-secrets, key: BILL_DB_PASS } }
+        - name: SPRING_RABBITMQ_HOST
+          valueFrom: { configMapKeyRef: { name: bank-config, key: RMQ_HOST } }
+        - name: SPRING_RABBITMQ_PORT
+          valueFrom: { configMapKeyRef: { name: bank-config, key: RMQ_PORT } }
+        - name: SPRING_RABBITMQ_USERNAME
+          valueFrom: { secretKeyRef: { name: bank-secrets, key: RMQ_USER } }
+        - name: SPRING_RABBITMQ_PASSWORD
+          valueFrom: { secretKeyRef: { name: bank-secrets, key: RMQ_PASS } }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: bill-service
+  namespace: default
+spec:
+  selector: { app: bill-service }
+  ports: [{ port: 8084, targetPort: 8084 }]
+---
+# ================= 5. CURRENCY SERVICE =================
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: currency-service
+  namespace: default
+spec:
+  replicas: 1
+  selector: { matchLabels: { app: currency-service } }
+  template:
+    metadata: { labels: { app: currency-service } }
+    spec:
+      containers:
+      - name: currency-service
+        image: mstfckrc/currency-service:v1
+        ports: [{ containerPort: 8083 }]
+        readinessProbe:
+          httpGet:
+            path: /actuator/health
+            port: 8083
+          initialDelaySeconds: 45
+          periodSeconds: 10
+          failureThreshold: 6
+        envFrom:
+        - configMapRef: { name: bank-config }
+        - secretRef: { name: bank-secrets }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: currency-service
+  namespace: default
+spec:
+  selector: { app: currency-service }
+  ports: [{ port: 8083, targetPort: 8083 }]
+---
+# ================= 6. NOTIFICATION SERVICE =================
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: notification-service
+  namespace: default
+spec:
+  replicas: 1
+  selector: { matchLabels: { app: notification-service } }
+  template:
+    metadata: { labels: { app: notification-service } }
+    spec:
+      containers:
+      - name: notification-service
+        image: mstfckrc/notification-service:v1
+        ports: [{ containerPort: 8082 }]
+        readinessProbe:
+          httpGet:
+            path: /actuator/health
+            port: 8082
+          initialDelaySeconds: 45
+          periodSeconds: 10
+          failureThreshold: 6
+        envFrom:
+        - configMapRef: { name: bank-config }
+        - secretRef: { name: bank-secrets }
+        env:
+        - name: SPRING_RABBITMQ_HOST
+          valueFrom: { configMapKeyRef: { name: bank-config, key: RMQ_HOST } }
+        - name: SPRING_RABBITMQ_PORT
+          valueFrom: { configMapKeyRef: { name: bank-config, key: RMQ_PORT } }
+        - name: SPRING_RABBITMQ_USERNAME
+          valueFrom: { secretKeyRef: { name: bank-secrets, key: RMQ_USER } }
+        - name: SPRING_RABBITMQ_PASSWORD
+          valueFrom: { secretKeyRef: { name: bank-secrets, key: RMQ_PASS } }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: notification-service
+  namespace: default
+spec:
+  selector: { app: notification-service }
+  ports: [{ port: 8082, targetPort: 8082 }]

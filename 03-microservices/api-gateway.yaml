@@ -1,0 +1,48 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: api-gateway
+  namespace: default
+spec:
+  replicas: 1
+  selector: { matchLabels: { app: api-gateway } }
+  template:
+    metadata: { labels: { app: api-gateway } }
+    spec:
+      hostAliases:
+      - ip: "192.168.56.51"
+        hostnames:
+        - "auth.bank.local"
+      containers:
+      - name: api-gateway
+        image: mstfckrc/api-gateway:v1
+        ports: [{ containerPort: 8081 }]
+        # 🚀 EKLENEN KISIM: NGINX'İ BEKLETEN KALKAN
+        readinessProbe:
+          httpGet:
+            path: /actuator/health
+            port: 8081
+          initialDelaySeconds: 45
+          periodSeconds: 10
+          failureThreshold: 6
+        envFrom:
+        - configMapRef: { name: bank-config }
+        - secretRef: { name: bank-secrets }
+        env:
+        - name: OAUTH_ISSUER_URI
+          value: "https://auth.bank.local/realms/bank-realm"
+        - name: KEYCLOAK_INTERNAL_URL
+          value: "http://keycloak:8080"
+        - name: SPRING_REDIS_HOST
+          value: "redis"
+        - name: SPRING_REDIS_PORT
+          value: "6379"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: api-gateway
+  namespace: default
+spec:
+  selector: { app: api-gateway }
+  ports: [{ port: 8081, targetPort: 8081 }]

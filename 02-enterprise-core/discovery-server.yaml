@@ -1,0 +1,39 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: discovery-server
+  namespace: default
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: discovery-server
+  template:
+    metadata:
+      labels:
+        app: discovery-server
+    spec:
+      nodeSelector:
+        kubernetes.io/hostname: k8s-worker1 # Kaynakları optimize etmek için Worker 1'e konumlandırıyoruz
+      containers:
+      - name: discovery-server
+        # Gelecekte kendi local build ettiğin imajı buraya yazacağız, şimdilik altyapı hazır dursun
+        image: mstfckrc/discovery-server:v1 # Veya kendi derlediğin eureka imajı adı (Aşağıda imaj build adımını konuşacağız)
+        ports:
+        - containerPort: 8761
+        env:
+        # Eureka standalone çalıştığı için kendi application.yml ayarlarını configmap'ten de besleyebiliriz
+        - name: SPRING_APPLICATION_NAME
+          value: "discovery-server"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: discovery-server
+  namespace: default
+spec:
+  selector:
+    app: discovery-server
+  ports:
+    - port: 8761
+      targetPort: 8761

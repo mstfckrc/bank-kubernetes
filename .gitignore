@@ -1,0 +1,18 @@
+# Güvenlik: Kriptografik anahtarlar ve TLS Sertifikaları
+00-infrastructure/certs/
+*.crt
+*.key
+*.pem
+
+# Güvenlik: Gerçek Şifrelerin Bulunduğu K8s Secret Dosyası
+00-infrastructure/bank-secret.yaml
+
+# IDE ve İşletim Sistemi Kalıntıları
+.vscode/
+.idea/
+*.swp
+.DS_Store
+Thumbs.db
+
+# Log ve Test Dosyaları
+*.log

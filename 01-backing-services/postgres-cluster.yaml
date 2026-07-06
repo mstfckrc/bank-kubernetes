@@ -1,0 +1,151 @@
+# ================= 1. AUTH DATABASE =================
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: pvc-postgres-auth
+  namespace: default
+spec:
+  accessModes: ["ReadWriteOnce"]
+  storageClassName: longhorn
+  resources: { requests: { storage: 1Gi } }
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: postgres-auth
+  namespace: default
+spec:
+  replicas: 1
+  selector: { matchLabels: { app: postgres-auth } }
+  template:
+    metadata: { labels: { app: postgres-auth } }
+    spec:
+      containers:
+      - name: postgres
+        image: postgres:15-alpine
+        ports: [{ containerPort: 5432 }]
+        env:
+        - name: POSTGRES_DB
+          value: "bank_auth_db"
+        - name: POSTGRES_USER
+          valueFrom: { secretKeyRef: { name: bank-secrets, key: AUTH_DB_USER } }
+        - name: POSTGRES_PASSWORD
+          valueFrom: { secretKeyRef: { name: bank-secrets, key: AUTH_DB_PASS } }
+        - name: PGDATA
+          value: "/var/lib/postgresql/data/pgdata"
+        volumeMounts: [{ name: pgdata, mountPath: /var/lib/postgresql/data }]
+      volumes: [{ name: pgdata, persistentVolumeClaim: { claimName: pvc-postgres-auth } }]
+---
+# ================= 2. BILL DATABASE =================
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: pvc-postgres-bill
+  namespace: default
+spec:
+  accessModes: ["ReadWriteOnce"]
+  storageClassName: longhorn
+  resources: { requests: { storage: 1Gi } }
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: postgres-bill
+  namespace: default
+spec:
+  replicas: 1
+  selector: { matchLabels: { app: postgres-bill } }
+  template:
+    metadata: { labels: { app: postgres-bill } }
+    spec:
+      containers:
+      - name: postgres
+        image: postgres:15-alpine
+        ports: [{ containerPort: 5432 }]
+        env:
+        - name: POSTGRES_DB
+          value: "bank_bill_db"
+        - name: POSTGRES_USER
+          valueFrom: { secretKeyRef: { name: bank-secrets, key: BILL_DB_USER } }
+        - name: POSTGRES_PASSWORD
+          valueFrom: { secretKeyRef: { name: bank-secrets, key: BILL_DB_PASS } }
+        - name: PGDATA
+          value: "/var/lib/postgresql/data/pgdata"
+        volumeMounts: [{ name: pgdata, mountPath: /var/lib/postgresql/data }]
+      volumes: [{ name: pgdata, persistentVolumeClaim: { claimName: pvc-postgres-bill } }]
+---
+# ================= 3. CORPORATE DATABASE =================
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: pvc-postgres-corporate
+  namespace: default
+spec:
+  accessModes: ["ReadWriteOnce"]
+  storageClassName: longhorn
+  resources: { requests: { storage: 1Gi } }
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: postgres-corporate
+  namespace: default
+spec:
+  replicas: 1
+  selector: { matchLabels: { app: postgres-corporate } }
+  template:
+    metadata: { labels: { app: postgres-corporate } }
+    spec:
+      containers:
+      - name: postgres
+        image: postgres:15-alpine
+        ports: [{ containerPort: 5432 }]
+        env:
+        - name: POSTGRES_DB
+          value: "bank_corporate_db"
+        - name: POSTGRES_USER
+          valueFrom: { secretKeyRef: { name: bank-secrets, key: CORP_DB_USER } }
+        - name: POSTGRES_PASSWORD
+          valueFrom: { secretKeyRef: { name: bank-secrets, key: CORP_DB_PASS } }
+        - name: PGDATA
+          value: "/var/lib/postgresql/data/pgdata"
+        volumeMounts: [{ name: pgdata, mountPath: /var/lib/postgresql/data }]
+      volumes: [{ name: pgdata, persistentVolumeClaim: { claimName: pvc-postgres-corporate } }]
+---
+# ================= 4. KEYCLOAK DATABASE =================
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: pvc-postgres-keycloak
+  namespace: default
+spec:
+  accessModes: ["ReadWriteOnce"]
+  storageClassName: longhorn
+  resources: { requests: { storage: 1Gi } }
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: keycloak-db
+  namespace: default
+spec:
+  replicas: 1
+  selector: { matchLabels: { app: keycloak-db } }
+  template:
+    metadata: { labels: { app: keycloak-db } }
+    spec:
+      containers:
+      - name: postgres
+        image: postgres:15-alpine
+        ports: [{ containerPort: 5432 }]
+        env:
+        - name: POSTGRES_DB
+          value: "keycloak"
+        - name: POSTGRES_USER
+          valueFrom: { secretKeyRef: { name: bank-secrets, key: KC_DB_USER } }
+        - name: POSTGRES_PASSWORD
+          valueFrom: { secretKeyRef: { name: bank-secrets, key: KC_DB_PASS } }
+        - name: PGDATA
+          value: "/var/lib/postgresql/data/pgdata"
+        volumeMounts: [{ name: pgdata, mountPath: /var/lib/postgresql/data }]
+      volumes: [{ name: pgdata, persistentVolumeClaim: { claimName: pvc-postgres-keycloak } }]
