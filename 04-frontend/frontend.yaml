@@ -35,8 +35,12 @@ spec:
           value: "bank-realm"
         - name: KEYCLOAK_CLIENT_ID
           value: "bank-auth-client"
+        # 🛡️ 4. KALKAN: Şifreyi Merkezi Secret'tan Çekme (Hardcoded sızıntı giderildi)
         - name: KEYCLOAK_CLIENT_SECRET
-          value: "wi7n1h8syiBLDd1qqSyaB3AE9AVjQSi5"
+          valueFrom:
+            secretKeyRef:
+              name: bank-secrets
+              key: KEYCLOAK_CLIENT_SECRET
 ---
 apiVersion: v1
 kind: Service
