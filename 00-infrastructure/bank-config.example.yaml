@@ -1,0 +1,32 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: bank-config
+  namespace: default
+data:
+  # 🌐 Ağ ve Yönlendirme (Domainler)
+  NEXT_PUBLIC_FRONTEND_URL: "https://app.bank.local"
+  NEXT_PUBLIC_API_URL: "https://api.bank.local/api/v1"
+  NEXT_PUBLIC_KEYCLOAK_URL: "https://auth.bank.local"
+  OAUTH_ISSUER_URI: "https://auth.bank.local/realms/bank-realm"
+  
+  # 🏢 İç Ağ Servis Adresleri (Eureka ve Veri Depoları)
+  EUREKA_URL: "http://discovery-server:8761/eureka/"
+  ES_URL: "http://elasticsearch:9200"
+  KC_INTERNAL_URL: "http://keycloak:8080"
+  RMQ_HOST: "rabbitmq"
+  RMQ_PORT: "5672"
+  REDIS_HOST: "redis"
+  REDIS_PORT: "6379"
+
+  # 🗄️ Veritabanı Bağlantı URL'leri
+  CORE_DB_URL: "jdbc:postgresql://postgres-core:5432/bank_core_db"
+  AUTH_DB_URL: "jdbc:postgresql://postgres-auth:5432/bank_auth_db"
+  BILL_DB_URL: "jdbc:postgresql://postgres-bill:5432/bank_bill_db"
+  CORP_DB_URL: "jdbc:postgresql://postgres-corporate:5432/bank_corporate_db"
+  KC_DB_URL: "jdbc:postgresql://keycloak-db:5432/keycloak"
+
+  # 🔑 Keycloak ve Frontend Sabitleri
+  KEYCLOAK_REALM: "bank-realm"
+  KEYCLOAK_CLIENT_ID: "bank-auth-client"
+  NEXT_PUBLIC_RECAPTCHA_SITE_KEY: "YOUR_RECAPTCHA_SITE_KEY_HERE"
