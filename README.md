@@ -99,9 +99,10 @@ Sistem ayağa kalktıktan sonra, mikroservislerin Zero-Trust mimarisinde kimlik 
 
 1.  **Giriş:** Tarayıcıdan `https://auth.bank.local` adresine gidin. `bank-secret.yaml` içinde belirlediğiniz `KC_ADMIN_USER` ve şifresi ile giriş yapın.
 2.  **Realm Oluşturma:** Sol üst menüden **Create Realm** diyerek `bank-realm` adında bir realm açın.
-3.  **Client Oluşturma:** Sol menüden **Clients -> Create client** diyerek `bank-auth-client` adında bir istemci oluşturun. *Client authentication* ve *Authorization* seçeneklerini **ON** yapın.
-4.  **Rolleri Tanımlama:** Sol menüden **Realm roles -> Create role** diyerek büyük harflerle şu 3 rolü ekleyin: `ADMIN`, `RETAIL_CUSTOMER`, `CORPORATE_MANAGER`.
-5.  **Secret Kopyalama:** `bank-auth-client` detay sayfasında **Credentials** sekmesindeki **Client Secret** değerini kopyalayın.
+3.  **Client Oluşturma:** Sol menüden **Clients -> Create client** diyerek `bank-auth-client` adında bir istemci oluşturun. *Capability config* sayfasında **Client authentication** ve **Service accounts roles** seçeneklerini **ON** yapın.
+4.  **Servis İzinlerini Atama (Kritik):** Auth mikroservisinin Keycloak ile API üzerinden haberleşebilmesi için yetki vermemiz gerekir. `bank-auth-client` detaylarındayken **Service accounts roles** sekmesine tıklayın. *Assign role* butonuna basıp filtreyi *Filter by clients* yapın. Çıkan listeden `realm-management` istemcisine ait **`view-users`**, **`manage-users`** ve **`view-realm`** rollerini seçerek atayın.
+5.  **Rolleri Tanımlama:** Sol menüden **Realm roles -> Create role** diyerek büyük harflerle şu 3 rolü ekleyin: `ADMIN`, `RETAIL_CUSTOMER`, `CORPORATE_MANAGER`.
+6.  **Secret Kopyalama:** `bank-auth-client` detay sayfasında **Credentials** sekmesindeki **Client Secret** değerini kopyalayın.
 
 **Son Adım (Uygulamaları Güncelleme):**
 Kopyaladığınız Secret değerini `bank-secret.yaml` dosyasındaki `KEYCLOAK_CLIENT_SECRET` alanına yapıştırın. Ardından Secret'ı ve ona bağlı podları K8s üzerinde güncelleyin:
@@ -109,6 +110,19 @@ Kopyaladığınız Secret değerini `bank-secret.yaml` dosyasındaki `KEYCLOAK_C
 ```bash
 kubectl apply -f 00-infrastructure/bank-secret.yaml
 kubectl rollout restart deployment api-gateway auth-service frontend
+```
+
+### Adım 4: İlk Admin Kullanıcısını Yetkilendirme
+
+Sistem tamamen ayağa kalkıp uygulamalar güncellendikten sonra, frontend arayüzünden (`https://app.bank.local`) kayıt ekranını kullanarak kendiniz için ilk müşteri kaydını oluşturun (Örn: TC Kimlik No `11111111111`).
+
+Kayıt işlemi bittikten sonra bu kullanıcıyı sistem yöneticisi (ADMIN) yapmak ve hesabını onaylamak için veritabanına pod üzerinden doğrudan müdahale etmemiz gerekmektedir. Terminalinizde aşağıdaki komutu çalıştırarak kullanıcınızı yetkilendirin:
+
+```bash
+kubectl exec -it $(kubectl get pod -l app=postgres-auth -o jsonpath='{.items[0].metadata.name}') -- psql -U postgres -d bank_auth_db -c "UPDATE app_users SET role = 'ADMIN', status = 'APPROVED' WHERE identity_number = '11111111111';"
+```
+
+Bu işlemden sonra belirlediğiniz şifre ile arayüze giriş yapabilir ve tüm bankacılık platformunu yönetmeye başlayabilirsiniz.
 ```
 
 Sisteminiz kullanıma ve test edilmeye tamamen hazırdır!# bank-kubernetes
