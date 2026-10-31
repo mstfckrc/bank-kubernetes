@@ -1,0 +1,20 @@
+# K3s Helm Controller Longhorn chart'ını kurar; Helm CLI gerekmez.
+apiVersion: helm.cattle.io/v1
+kind: HelmChart
+metadata:
+  name: longhorn
+  namespace: kube-system
+spec:
+  repo: https://charts.longhorn.io
+  chart: longhorn
+  version: 1.12.1
+  targetNamespace: longhorn-system
+  createNamespace: true
+  # Kurulum hatasında otomatik kaldırma yerine operatör inceleyebilsin.
+  failurePolicy: abort
+  valuesContent: |-
+    persistence:
+      defaultClass: false
+      defaultClassReplicaCount: 2
+    defaultSettings:
+      createDefaultDiskLabeledNodes: true

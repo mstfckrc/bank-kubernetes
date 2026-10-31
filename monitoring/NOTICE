@@ -1,0 +1,7 @@
+Node Exporter Full dashboard: rfmoz, Grafana dashboard 1860.
+Source: https://github.com/rfmoz/grafana-dashboards
+License: Apache License, Version 2.0 (see LICENSE-node-exporter).
+This copy is adapted from the local Grafana dashboard: datasource references,
+dashboard UID, and saved variable selections are changed for Compose provisioning.
+
+Bank-Demo Containers is a project dashboard for cAdvisor metrics.

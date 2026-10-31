@@ -1,0 +1,763 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: backend
+  namespace: bank-demo
+spec:
+  replicas: 1
+  selector:
+    matchLabels: &id001
+      app: backend
+  template:
+    metadata:
+      labels: *id001
+    spec:
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+            - matchExpressions:
+              - key: node-role.kubernetes.io/control-plane
+                operator: DoesNotExist
+      containers:
+      - name: backend
+        image: docker.io/mstfckrc/backend:sha-96d5690fc0a030d59ecff76dff136f759fc0308a
+        ports:
+        - name: http
+          containerPort: 8080
+        env:
+        - name: EUREKA_URL
+          valueFrom:
+            configMapKeyRef:
+              name: bank-config
+              key: EUREKA_URL
+        - name: EUREKA_INSTANCE_PREFER_IP_ADDRESS
+          value: 'true'
+        - name: EUREKA_INSTANCE_IP_ADDRESS
+          valueFrom:
+            fieldRef:
+              fieldPath: status.podIP
+        - name: DB_URL
+          valueFrom:
+            configMapKeyRef:
+              name: bank-config
+              key: CORE_DB_URL
+        - name: DB_USER
+          valueFrom:
+            secretKeyRef:
+              name: bank-demo-db-core
+              key: POSTGRES_USER
+        - name: DB_PASS
+          valueFrom:
+            secretKeyRef:
+              name: bank-demo-db-core
+              key: POSTGRES_PASSWORD
+        - name: SPRING_RABBITMQ_HOST
+          valueFrom:
+            configMapKeyRef:
+              name: bank-config
+              key: RMQ_HOST
+        - name: SPRING_RABBITMQ_PORT
+          valueFrom:
+            configMapKeyRef:
+              name: bank-config
+              key: RMQ_PORT
+        - name: SPRING_RABBITMQ_USERNAME
+          valueFrom:
+            secretKeyRef:
+              name: bank-demo-rabbitmq
+              key: username
+        - name: SPRING_RABBITMQ_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: bank-demo-rabbitmq
+              key: password
+        - name: OAUTH_ISSUER_URI
+          valueFrom:
+            configMapKeyRef:
+              name: bank-config
+              key: OAUTH_ISSUER_URI
+        - name: OAUTH_JWK_SET_URI
+          valueFrom:
+            configMapKeyRef:
+              name: bank-config
+              key: OAUTH_JWK_SET_URI
+        - name: BANK_SERVICE_TOKEN_URI
+          valueFrom:
+            configMapKeyRef:
+              name: bank-config
+              key: BANK_SERVICE_TOKEN_URI
+        - name: BANK_SERVICE_CLIENT_ID
+          value: bank-core-service
+        - name: BANK_SERVICE_CLIENT_SECRET
+          valueFrom:
+            secretKeyRef:
+              name: bank-demo-client-credentials
+              key: CORE_BANK_SERVICE_CLIENT_SECRET
+        - name: ELASTICSEARCH_URL
+          valueFrom:
+            configMapKeyRef:
+              name: bank-config
+              key: ES_URL
+        resources:
+          requests:
+            cpu: 100m
+            memory: 256Mi
+          limits:
+            memory: 512Mi
+        startupProbe:
+          httpGet:
+            path: /actuator/health
+            port: http
+          periodSeconds: 10
+          failureThreshold: 30
+        readinessProbe:
+          httpGet:
+            path: /actuator/health
+            port: http
+          periodSeconds: 15
+          timeoutSeconds: 5
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: backend
+  namespace: bank-demo
+spec:
+  selector:
+    app: backend
+  ports:
+  - name: http
+    port: 8080
+    targetPort: http
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: auth-service
+  namespace: bank-demo
+spec:
+  replicas: 1
+  selector:
+    matchLabels: &id001
+      app: auth-service
+  template:
+    metadata:
+      labels: *id001
+    spec:
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+            - matchExpressions:
+              - key: node-role.kubernetes.io/control-plane
+                operator: DoesNotExist
+      containers:
+      - name: auth-service
+        image: docker.io/mstfckrc/auth-service:sha-96d5690fc0a030d59ecff76dff136f759fc0308a
+        ports:
+        - name: http
+          containerPort: 8086
+        env:
+        - name: EUREKA_URL
+          valueFrom:
+            configMapKeyRef:
+              name: bank-config
+              key: EUREKA_URL
+        - name: EUREKA_INSTANCE_PREFER_IP_ADDRESS
+          value: 'true'
+        - name: EUREKA_INSTANCE_IP_ADDRESS
+          valueFrom:
+            fieldRef:
+              fieldPath: status.podIP
+        - name: DB_URL
+          valueFrom:
+            configMapKeyRef:
+              name: bank-config
+              key: AUTH_DB_URL
+        - name: DB_USER
+          valueFrom:
+            secretKeyRef:
+              name: bank-demo-db-auth
+              key: POSTGRES_USER
+        - name: DB_PASS
+          valueFrom:
+            secretKeyRef:
+              name: bank-demo-db-auth
+              key: POSTGRES_PASSWORD
+        - name: SPRING_RABBITMQ_HOST
+          valueFrom:
+            configMapKeyRef:
+              name: bank-config
+              key: RMQ_HOST
+        - name: SPRING_RABBITMQ_PORT
+          valueFrom:
+            configMapKeyRef:
+              name: bank-config
+              key: RMQ_PORT
+        - name: SPRING_RABBITMQ_USERNAME
+          valueFrom:
+            secretKeyRef:
+              name: bank-demo-rabbitmq
+              key: username
+        - name: SPRING_RABBITMQ_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: bank-demo-rabbitmq
+              key: password
+        - name: OAUTH_ISSUER_URI
+          valueFrom:
+            configMapKeyRef:
+              name: bank-config
+              key: OAUTH_ISSUER_URI
+        - name: OAUTH_JWK_SET_URI
+          valueFrom:
+            configMapKeyRef:
+              name: bank-config
+              key: OAUTH_JWK_SET_URI
+        - name: BANK_SERVICE_TOKEN_URI
+          valueFrom:
+            configMapKeyRef:
+              name: bank-config
+              key: BANK_SERVICE_TOKEN_URI
+        - name: BANK_SERVICE_CLIENT_ID
+          value: bank-auth-service
+        - name: BANK_SERVICE_CLIENT_SECRET
+          valueFrom:
+            secretKeyRef:
+              name: bank-demo-client-credentials
+              key: AUTH_BANK_SERVICE_CLIENT_SECRET
+        - name: OAUTH_AUDIENCE
+          valueFrom:
+            configMapKeyRef:
+              name: bank-config
+              key: OAUTH_AUDIENCE
+        - name: KEYCLOAK_INTERNAL_URL
+          valueFrom:
+            configMapKeyRef:
+              name: bank-config
+              key: KC_INTERNAL_URL
+        - name: KEYCLOAK_ADMIN_CLIENT_ID
+          valueFrom:
+            configMapKeyRef:
+              name: bank-config
+              key: KEYCLOAK_ADMIN_CLIENT_ID
+        - name: KEYCLOAK_ADMIN_CLIENT_SECRET
+          valueFrom:
+            secretKeyRef:
+              name: bank-demo-client-credentials
+              key: KEYCLOAK_ADMIN_CLIENT_SECRET
+        - name: BANK_BOOTSTRAP_ADMIN_ENABLED
+          valueFrom:
+            configMapKeyRef:
+              name: bank-config
+              key: BANK_BOOTSTRAP_ADMIN_ENABLED
+        - name: JWT_SECRET
+          valueFrom:
+            secretKeyRef:
+              name: bank-demo-auth-bootstrap
+              key: JWT_SECRET
+        - name: RECAPTCHA_SECRET
+          valueFrom:
+            secretKeyRef:
+              name: bank-demo-auth-bootstrap
+              key: RECAPTCHA_SECRET
+        - name: BANK_BOOTSTRAP_ADMIN_IDENTITY_NUMBER
+          valueFrom:
+            secretKeyRef:
+              name: bank-demo-auth-bootstrap
+              key: BANK_BOOTSTRAP_ADMIN_IDENTITY_NUMBER
+        - name: BANK_BOOTSTRAP_ADMIN_FIRST_NAME
+          valueFrom:
+            secretKeyRef:
+              name: bank-demo-auth-bootstrap
+              key: BANK_BOOTSTRAP_ADMIN_FIRST_NAME
+        - name: BANK_BOOTSTRAP_ADMIN_LAST_NAME
+          valueFrom:
+            secretKeyRef:
+              name: bank-demo-auth-bootstrap
+              key: BANK_BOOTSTRAP_ADMIN_LAST_NAME
+        - name: BANK_BOOTSTRAP_ADMIN_EMAIL
+          valueFrom:
+            secretKeyRef:
+              name: bank-demo-auth-bootstrap
+              key: BANK_BOOTSTRAP_ADMIN_EMAIL
+        - name: BANK_BOOTSTRAP_ADMIN_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: bank-demo-auth-bootstrap
+              key: BANK_BOOTSTRAP_ADMIN_PASSWORD
+        - name: BANK_BOOTSTRAP_ADMIN_MARKER
+          valueFrom:
+            secretKeyRef:
+              name: bank-demo-auth-bootstrap
+              key: BANK_BOOTSTRAP_ADMIN_MARKER
+        resources:
+          requests:
+            cpu: 100m
+            memory: 256Mi
+          limits:
+            memory: 512Mi
+        startupProbe:
+          httpGet:
+            path: /actuator/health/readiness
+            port: http
+          periodSeconds: 10
+          failureThreshold: 30
+        readinessProbe:
+          httpGet:
+            path: /actuator/health/readiness
+            port: http
+          periodSeconds: 15
+          timeoutSeconds: 5
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: auth-service
+  namespace: bank-demo
+spec:
+  selector:
+    app: auth-service
+  ports:
+  - name: http
+    port: 8086
+    targetPort: http
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: bill-service
+  namespace: bank-demo
+spec:
+  replicas: 1
+  selector:
+    matchLabels: &id001
+      app: bill-service
+  template:
+    metadata:
+      labels: *id001
+    spec:
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+            - matchExpressions:
+              - key: node-role.kubernetes.io/control-plane
+                operator: DoesNotExist
+      containers:
+      - name: bill-service
+        image: docker.io/mstfckrc/bill-service:sha-e68b8a70be199967c28b73bb179879e777a2679d
+        ports:
+        - name: http
+          containerPort: 8084
+        env:
+        - name: EUREKA_URL
+          valueFrom:
+            configMapKeyRef:
+              name: bank-config
+              key: EUREKA_URL
+        - name: EUREKA_INSTANCE_PREFER_IP_ADDRESS
+          value: 'true'
+        - name: EUREKA_INSTANCE_IP_ADDRESS
+          valueFrom:
+            fieldRef:
+              fieldPath: status.podIP
+        - name: DB_URL
+          valueFrom:
+            configMapKeyRef:
+              name: bank-config
+              key: BILL_DB_URL
+        - name: DB_USER
+          valueFrom:
+            secretKeyRef:
+              name: bank-demo-db-bill
+              key: POSTGRES_USER
+        - name: DB_PASS
+          valueFrom:
+            secretKeyRef:
+              name: bank-demo-db-bill
+              key: POSTGRES_PASSWORD
+        - name: SPRING_RABBITMQ_HOST
+          valueFrom:
+            configMapKeyRef:
+              name: bank-config
+              key: RMQ_HOST
+        - name: SPRING_RABBITMQ_PORT
+          valueFrom:
+            configMapKeyRef:
+              name: bank-config
+              key: RMQ_PORT
+        - name: SPRING_RABBITMQ_USERNAME
+          valueFrom:
+            secretKeyRef:
+              name: bank-demo-rabbitmq
+              key: username
+        - name: SPRING_RABBITMQ_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: bank-demo-rabbitmq
+              key: password
+        - name: OAUTH_ISSUER_URI
+          valueFrom:
+            configMapKeyRef:
+              name: bank-config
+              key: OAUTH_ISSUER_URI
+        - name: OAUTH_JWK_SET_URI
+          valueFrom:
+            configMapKeyRef:
+              name: bank-config
+              key: OAUTH_JWK_SET_URI
+        - name: BANK_SERVICE_TOKEN_URI
+          valueFrom:
+            configMapKeyRef:
+              name: bank-config
+              key: BANK_SERVICE_TOKEN_URI
+        - name: BANK_SERVICE_CLIENT_ID
+          value: bank-bill-service
+        - name: BANK_SERVICE_CLIENT_SECRET
+          valueFrom:
+            secretKeyRef:
+              name: bank-demo-client-credentials
+              key: BILL_BANK_SERVICE_CLIENT_SECRET
+        - name: OAUTH_AUDIENCE
+          valueFrom:
+            configMapKeyRef:
+              name: bank-config
+              key: OAUTH_AUDIENCE
+        resources:
+          requests:
+            cpu: 100m
+            memory: 256Mi
+          limits:
+            memory: 512Mi
+        startupProbe:
+          httpGet:
+            path: /actuator/health
+            port: http
+          periodSeconds: 10
+          failureThreshold: 30
+        readinessProbe:
+          httpGet:
+            path: /actuator/health
+            port: http
+          periodSeconds: 15
+          timeoutSeconds: 5
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: bill-service
+  namespace: bank-demo
+spec:
+  selector:
+    app: bill-service
+  ports:
+  - name: http
+    port: 8084
+    targetPort: http
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: corporate-service
+  namespace: bank-demo
+spec:
+  replicas: 1
+  selector:
+    matchLabels: &id001
+      app: corporate-service
+  template:
+    metadata:
+      labels: *id001
+    spec:
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+            - matchExpressions:
+              - key: node-role.kubernetes.io/control-plane
+                operator: DoesNotExist
+      containers:
+      - name: corporate-service
+        image: docker.io/mstfckrc/corporate-service:sha-e68b8a70be199967c28b73bb179879e777a2679d
+        ports:
+        - name: http
+          containerPort: 8085
+        env:
+        - name: EUREKA_URL
+          valueFrom:
+            configMapKeyRef:
+              name: bank-config
+              key: EUREKA_URL
+        - name: EUREKA_INSTANCE_PREFER_IP_ADDRESS
+          value: 'true'
+        - name: EUREKA_INSTANCE_IP_ADDRESS
+          valueFrom:
+            fieldRef:
+              fieldPath: status.podIP
+        - name: DB_URL
+          valueFrom:
+            configMapKeyRef:
+              name: bank-config
+              key: CORP_DB_URL
+        - name: DB_USER
+          valueFrom:
+            secretKeyRef:
+              name: bank-demo-db-corporate
+              key: POSTGRES_USER
+        - name: DB_PASS
+          valueFrom:
+            secretKeyRef:
+              name: bank-demo-db-corporate
+              key: POSTGRES_PASSWORD
+        - name: SPRING_RABBITMQ_HOST
+          valueFrom:
+            configMapKeyRef:
+              name: bank-config
+              key: RMQ_HOST
+        - name: SPRING_RABBITMQ_PORT
+          valueFrom:
+            configMapKeyRef:
+              name: bank-config
+              key: RMQ_PORT
+        - name: SPRING_RABBITMQ_USERNAME
+          valueFrom:
+            secretKeyRef:
+              name: bank-demo-rabbitmq
+              key: username
+        - name: SPRING_RABBITMQ_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: bank-demo-rabbitmq
+              key: password
+        - name: OAUTH_ISSUER_URI
+          valueFrom:
+            configMapKeyRef:
+              name: bank-config
+              key: OAUTH_ISSUER_URI
+        - name: OAUTH_JWK_SET_URI
+          valueFrom:
+            configMapKeyRef:
+              name: bank-config
+              key: OAUTH_JWK_SET_URI
+        - name: BANK_SERVICE_TOKEN_URI
+          valueFrom:
+            configMapKeyRef:
+              name: bank-config
+              key: BANK_SERVICE_TOKEN_URI
+        - name: BANK_SERVICE_CLIENT_ID
+          value: bank-corporate-service
+        - name: BANK_SERVICE_CLIENT_SECRET
+          valueFrom:
+            secretKeyRef:
+              name: bank-demo-client-credentials
+              key: CORPORATE_BANK_SERVICE_CLIENT_SECRET
+        - name: OAUTH_AUDIENCE
+          valueFrom:
+            configMapKeyRef:
+              name: bank-config
+              key: OAUTH_AUDIENCE
+        resources:
+          requests:
+            cpu: 100m
+            memory: 256Mi
+          limits:
+            memory: 512Mi
+        startupProbe:
+          httpGet:
+            path: /actuator/health
+            port: http
+          periodSeconds: 10
+          failureThreshold: 30
+        readinessProbe:
+          httpGet:
+            path: /actuator/health
+            port: http
+          periodSeconds: 15
+          timeoutSeconds: 5
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: corporate-service
+  namespace: bank-demo
+spec:
+  selector:
+    app: corporate-service
+  ports:
+  - name: http
+    port: 8085
+    targetPort: http
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: currency-service
+  namespace: bank-demo
+spec:
+  replicas: 1
+  selector:
+    matchLabels: &id001
+      app: currency-service
+  template:
+    metadata:
+      labels: *id001
+    spec:
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+            - matchExpressions:
+              - key: node-role.kubernetes.io/control-plane
+                operator: DoesNotExist
+      containers:
+      - name: currency-service
+        image: docker.io/mstfckrc/currency-service:sha-e68b8a70be199967c28b73bb179879e777a2679d
+        ports:
+        - name: http
+          containerPort: 8083
+        env:
+        - name: EUREKA_URL
+          valueFrom:
+            configMapKeyRef:
+              name: bank-config
+              key: EUREKA_URL
+        - name: EUREKA_INSTANCE_PREFER_IP_ADDRESS
+          value: 'true'
+        - name: EUREKA_INSTANCE_IP_ADDRESS
+          valueFrom:
+            fieldRef:
+              fieldPath: status.podIP
+        - name: REDIS_HOST
+          valueFrom:
+            configMapKeyRef:
+              name: bank-config
+              key: REDIS_HOST
+        - name: REDIS_PORT
+          valueFrom:
+            configMapKeyRef:
+              name: bank-config
+              key: REDIS_PORT
+        resources:
+          requests:
+            cpu: 100m
+            memory: 256Mi
+          limits:
+            memory: 512Mi
+        startupProbe:
+          httpGet:
+            path: /actuator/health
+            port: http
+          periodSeconds: 10
+          failureThreshold: 30
+        readinessProbe:
+          httpGet:
+            path: /actuator/health
+            port: http
+          periodSeconds: 15
+          timeoutSeconds: 5
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: currency-service
+  namespace: bank-demo
+spec:
+  selector:
+    app: currency-service
+  ports:
+  - name: http
+    port: 8083
+    targetPort: http
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: notification-service
+  namespace: bank-demo
+spec:
+  replicas: 1
+  selector:
+    matchLabels: &id001
+      app: notification-service
+  template:
+    metadata:
+      labels: *id001
+    spec:
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+            - matchExpressions:
+              - key: node-role.kubernetes.io/control-plane
+                operator: DoesNotExist
+      containers:
+      - name: notification-service
+        image: docker.io/mstfckrc/notification-service:sha-e68b8a70be199967c28b73bb179879e777a2679d
+        ports:
+        - name: http
+          containerPort: 8082
+        env:
+        - name: EUREKA_URL
+          valueFrom:
+            configMapKeyRef:
+              name: bank-config
+              key: EUREKA_URL
+        - name: EUREKA_INSTANCE_PREFER_IP_ADDRESS
+          value: 'true'
+        - name: EUREKA_INSTANCE_IP_ADDRESS
+          valueFrom:
+            fieldRef:
+              fieldPath: status.podIP
+        - name: SPRING_RABBITMQ_HOST
+          valueFrom:
+            configMapKeyRef:
+              name: bank-config
+              key: RMQ_HOST
+        - name: SPRING_RABBITMQ_PORT
+          valueFrom:
+            configMapKeyRef:
+              name: bank-config
+              key: RMQ_PORT
+        - name: SPRING_RABBITMQ_USERNAME
+          valueFrom:
+            secretKeyRef:
+              name: bank-demo-rabbitmq
+              key: username
+        - name: SPRING_RABBITMQ_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: bank-demo-rabbitmq
+              key: password
+        resources:
+          requests:
+            cpu: 100m
+            memory: 256Mi
+          limits:
+            memory: 512Mi
+        startupProbe:
+          httpGet:
+            path: /actuator/health
+            port: http
+          periodSeconds: 10
+          failureThreshold: 30
+        readinessProbe:
+          httpGet:
+            path: /actuator/health
+            port: http
+          periodSeconds: 15
+          timeoutSeconds: 5
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: notification-service
+  namespace: bank-demo
+spec:
+  selector:
+    app: notification-service
+  ports:
+  - name: http
+    port: 8082
+    targetPort: http

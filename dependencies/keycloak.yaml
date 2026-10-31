@@ -1,0 +1,140 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: keycloak
+  namespace: bank-demo
+spec:
+  replicas: 1
+  selector:
+    matchLabels: &id001
+      app: keycloak
+  template:
+    metadata:
+      labels: *id001
+    spec:
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+            - matchExpressions:
+              - key: node-role.kubernetes.io/control-plane
+                operator: DoesNotExist
+      containers:
+      - name: keycloak
+        image: quay.io/keycloak/keycloak:24.0.4
+        args:
+        - start-dev
+        - --import-realm
+        ports:
+        - name: http
+          containerPort: 8080
+        env:
+        - name: KC_DB
+          value: postgres
+        - name: KC_DB_URL
+          valueFrom:
+            configMapKeyRef:
+              name: bank-config
+              key: KC_DB_URL
+        - name: KC_DB_USERNAME
+          valueFrom:
+            secretKeyRef:
+              name: bank-demo-db-keycloak
+              key: POSTGRES_USER
+        - name: KC_DB_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: bank-demo-db-keycloak
+              key: POSTGRES_PASSWORD
+        - name: KEYCLOAK_ADMIN
+          valueFrom:
+            secretKeyRef:
+              name: bank-demo-keycloak-admin
+              key: username
+        - name: KEYCLOAK_ADMIN_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: bank-demo-keycloak-admin
+              key: password
+        - name: KC_HOSTNAME_URL
+          value: https://auth.bank.local
+        - name: KC_HOSTNAME_STRICT
+          value: 'false'
+        - name: KC_PROXY_HEADERS
+          value: xforwarded
+        - name: NEXT_PUBLIC_FRONTEND_URL
+          valueFrom:
+            configMapKeyRef:
+              name: bank-config
+              key: NEXT_PUBLIC_FRONTEND_URL
+        - name: KEYCLOAK_CLIENT_SECRET
+          valueFrom:
+            secretKeyRef:
+              name: bank-demo-client-credentials
+              key: KEYCLOAK_CLIENT_SECRET
+        - name: KEYCLOAK_ADMIN_CLIENT_SECRET
+          valueFrom:
+            secretKeyRef:
+              name: bank-demo-client-credentials
+              key: KEYCLOAK_ADMIN_CLIENT_SECRET
+        - name: AUTH_BANK_SERVICE_CLIENT_SECRET
+          valueFrom:
+            secretKeyRef:
+              name: bank-demo-client-credentials
+              key: AUTH_BANK_SERVICE_CLIENT_SECRET
+        - name: CORPORATE_BANK_SERVICE_CLIENT_SECRET
+          valueFrom:
+            secretKeyRef:
+              name: bank-demo-client-credentials
+              key: CORPORATE_BANK_SERVICE_CLIENT_SECRET
+        - name: BILL_BANK_SERVICE_CLIENT_SECRET
+          valueFrom:
+            secretKeyRef:
+              name: bank-demo-client-credentials
+              key: BILL_BANK_SERVICE_CLIENT_SECRET
+        - name: CORE_BANK_SERVICE_CLIENT_SECRET
+          valueFrom:
+            secretKeyRef:
+              name: bank-demo-client-credentials
+              key: CORE_BANK_SERVICE_CLIENT_SECRET
+        resources:
+          requests:
+            cpu: 250m
+            memory: 512Mi
+          limits:
+            memory: 1Gi
+        startupProbe:
+          httpGet:
+            path: /realms/bank-realm/.well-known/openid-configuration
+            port: http
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 36
+        readinessProbe:
+          httpGet:
+            path: /realms/bank-realm/.well-known/openid-configuration
+            port: http
+          periodSeconds: 10
+          timeoutSeconds: 5
+        volumeMounts:
+        - name: realm
+          mountPath: /opt/keycloak/data/import/bank-realm-realm.json
+          subPath: bank-realm-realm.json
+          readOnly: true
+      volumes:
+      - name: realm
+        configMap:
+          name: bank-realm
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: keycloak
+  namespace: bank-demo
+spec:
+  selector:
+    app: keycloak
+  ports:
+  - name: http
+    port: 8080
+    targetPort: http

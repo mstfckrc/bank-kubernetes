@@ -1,12 +1,7 @@
-# Güvenlik: Kriptografik anahtarlar ve TLS Sertifikaları
-00-infrastructure/certs/
+# Yerel sertifika/anahtar dosyaları. Public CA sertifikası aşağıda istisnadır.
 *.crt
 *.key
 *.pem
-
-# Güvenlik: Gerçek Şifrelerin Bulunduğu K8s Secret Dosyası
-00-infrastructure/bank-secret.yaml
-00-infrastructure/bank-configmap.yaml
 
 # IDE ve İşletim Sistemi Kalıntıları
 .vscode/
@@ -17,3 +12,14 @@ Thumbs.db
 
 # Log ve Test Dosyaları
 *.log
+__pycache__/
+*.py[cod]
+
+# Uygulamanın public CA sertifikası (özel anahtar değil).
+!config/root-ca.pem
+
+# Gerçek değer içeren yerel Kubernetes Secret dosyaları.
+# Örnek şablonlar (.example.yaml) Git'te kalır.
+/config/bank-demo-secrets.yaml
+/config/grafana-secret.yaml
+/config/tls-secrets.yaml

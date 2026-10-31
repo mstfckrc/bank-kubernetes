@@ -1,0 +1,17 @@
+# K3s Pod'ları auth.bank.local adresini ingress adresinde çözsün.
+# Dış IP değişirse bu kayıt da güncellenmelidir.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: coredns-custom
+  namespace: kube-system
+data:
+  bank-auth.server: |
+    auth.bank.local:53 {
+      errors
+      hosts {
+        192.168.56.51 auth.bank.local
+        ttl 60
+        no_reverse
+      }
+    }

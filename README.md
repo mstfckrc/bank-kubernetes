@@ -1,128 +1,160 @@
-# Distributed Banking Kubernetes Infrastructure (K3s + Longhorn)
+# Bank-Demo Kubernetes
 
-Bu depo, Spring Cloud tabanlı mikroservis bankacılık uygulamasının, bare-metal (fiziksel/sanal makine) Kubernetes (K3s) kümesi üzerinde yüksek erişilebilirlikli (High Availability), dayanıklı ve tam gözlemlenebilir bir mimariyle canlıya alınma (deployment) yapılandırmalarını içerir.
+Bank-Demo mikroservislerini K3s üzerinde çalıştırmak için kullanılan Kubernetes manifestleri. Bu depo; uygulama, veritabanı, bağımlılıklar, Ingress ve izleme yapılandırmasını içerir. Uygulamanın kaynak kodu ve Docker imajlarının oluşturulması ayrı [Bank-Microservice](https://github.com/mstfckrc/Bank-Microservice) deposundadır.
 
-## 📐 Sistem Mimarisi ve Topoloji
+Bu kurulum, Kubernetes ve dağıtık uygulamaları deneyerek öğrenmek için hazırlanmış bir laboratuvardır. Tek control-plane ve iki worker kullanır; üretim için yüksek erişilebilirlik iddiası taşımaz.
 
-Sistem, standart bulut sağlayıcılarının (AWS/GCP) yönetilen hizmetleri yerine, depolamadan yönlendirmeye kadar her şeyin lokalde kurgulandığı bir AR-GE altyapısı üzerine inşa edilmiştir.
-
-### Kubernetes Topolojisi
-
-Aşağıdaki diyagram, 1 Master ve 2 Worker Node'dan oluşan K3s kümesindeki ağ, depolama ve iş yükü dağılımını göstermektedir:
-
-```mermaid
-graph TD
-    subgraph Control Plane
-        M[K3s Master Node<br/><i>Taint: NoSchedule</i>]
-    end
-
-    subgraph Data Plane
-        W1[K3s Worker Node 1]
-        W2[K3s Worker Node 2]
-    end
-
-    subgraph Storage Layer
-        L[Longhorn Distributed Block Storage<br/><i>Replicas: 2</i>]
-    end
-
-    subgraph Network Layer
-        I[Nginx Ingress Controller<br/><i>Namespace Isolation</i>]
-    end
-
-    Client((Client)) --> |HTTPS / TLS| I
-    I --> |Routing| W1
-    I --> |Routing| W2
-    W1 -.-> |Stateful Data| L
-    W2 -.-> |Stateful Data| L
-    M -.-> |Manage| W1
-    M -.-> |Manage| W2
+```text
+Tarayıcı → ingress-nginx → frontend Service → frontend → API Gateway → banka servisleri
+Banka servisleri → PostgreSQL → Longhorn volume
 ```
 
-## 🧠 Temel Mimari Kararlar
+Banka servisleri ihtiyaçlarına göre Keycloak, Eureka, RabbitMQ ve Redis gibi bağımlılıklarla da iletişim kurar. Uygulama iş yükleri worker node'lara yerleşir. PostgreSQL veritabanları birer Pod kullanır; Longhorn volume'ları iki kopya tutacak şekilde yapılandırılmıştır. Volume replikasyonu, veritabanı replikasyonu veya yedekleme yerine geçmez.
 
-* **Cluster Yük Dağılımı:** Master node, `NoSchedule` taint'i ile izole edilmiştir. Control-plane süreçlerinin tıkanmaması için tüm uygulama iş yükleri (workloads) sadece Worker node'lar üzerinde çalıştırılır.
-* **Dağıtık Depolama (Distributed Storage):** Stateful veritabanları (PostgreSQL) ve metrik verileri (Grafana) için Kubernetes native blok depolama çözümü olan **Longhorn** kullanılmıştır. Her PVC verisi worker node'lar arasında eşzamanlı olarak replike edilir (RPO=0). Node'lardan biri çökse dahi sistem veri kaybı yaşamadan çalışmaya devam eder.
-* **Gözlemlenebilirlik (Observability Stack):** Sistem metrikleri için Prometheus, Grafana, Node Exporter ve K3s containerd entegrasyonlu cAdvisor kullanılmıştır. Uygulama logları ELK Stack (Elasticsearch, Logstash, Kibana) ile merkezi hale getirilmiştir.
-* **Ağ ve Güvenlik Yönetimi:** Nginx Ingress Controller üzerinden namespace tabanlı izolasyon (`default` ve `longhorn-system`) kurgulanmış, self-signed TLS sertifikaları ile güvenli haberleşme sağlanmıştır. Host-header bazlı yönlendirmeler ile DNS bypass işlemleri K8s kalkanlarıyla (hostAliases) desteklenmiştir.
-* **Sıfır Kesinti (Zero-Downtime) Kalkanı:** Java (Spring Boot) tabanlı mikroservislerin başlangıçtaki yoğun CPU tüketimi sırasında Ingress Controller'ın "502 Bad Gateway" fırlatmasını önlemek için, Actuator destekli **Readiness Probes (Hazırlık Kontrolleri)** yapılandırılmıştır.
+## Dizinler
 
-## 📂 Dizin Yapısı (GitOps Yaklaşımı)
+| Yol | İçerik |
+| --- | --- |
+| `config/` | Namespace, uygulama ayarları, Secret örnekleri, CoreDNS ve Longhorn chart tanımı |
+| `data/` | PostgreSQL StatefulSet, Service ve StorageClass tanımları |
+| `dependencies/` | Keycloak, Eureka, RabbitMQ, Redis ve Keycloak realm dosyası |
+| `services/` | Banka servisleri, API Gateway ve frontend |
+| `ingress/` | Uygulama, Eureka ve Longhorn Ingress kuralları |
+| `monitoring/` | Prometheus, Grafana, node-exporter, Elasticsearch, Logstash ve Kibana |
+| `images.py` | Docker Hub uygulama imajı etiketlerini inceleyen ve güncelleyen betik |
 
-Sistem bağımlılık sırasına göre modüler olarak klasörlenmiştir:
+## Ortam ve ön koşullar
 
-* `00-infrastructure/` - ConfigMap, Secret şablonları ve TLS sertifika hazırlıkları.
-* `01-backing-services/` - PostgreSQL Cluster, Redis ve RabbitMQ broker'ları.
-* `02-enterprise-core/` - Keycloak (Kimlik Yönetimi) ve Eureka (Keşif Sunucusu).
-* `03-microservices/` - API Gateway ve Bankacılık (Core, Auth, Bill, vb.) servisleri.
-* `04-frontend/` - Next.js tabanlı istemci arayüzü.
-* `05-ingress/` - Nginx Ingress yönlendirme kuralları (Longhorn dahil).
-* `06-observability/` - ELK Stack ve Prometheus/Grafana/cAdvisor yığınları.
+Önceki cluster kontrollerinde K3s `v1.35.5+k3s1`, ingress-nginx `v1.10.1` ve Longhorn `1.12.1` kullanılıyordu. Bu bilgiler gözlenen ortamı anlatır; farklı sürümler için uyumluluk garantisi değildir. Longhorn sürümü [config/longhorn.yaml](config/longhorn.yaml) içinde sabitlenmiştir.
 
-## 🚀 Kurulum ve Çalıştırma
+- K3s ve `kubectl` erişimi hazır olmalı. Longhorn kurulumu K3s Helm Controller kullanır; ayrıca Helm CLI gerekmez.
+- `ingress-nginx` controller ve LoadBalancer erişimi önceden kurulmuş olmalı. Bu depo controller'ı kurmaz.
+- Longhorn'un node gereksinimleri ve iki worker'da uygun depolama alanı sağlanmalı. Bu kurulumda varsayılan disk yalnızca `node.longhorn.io/create-default-disk=true` etiketli node'larda oluşturulur. [Longhorn gereksinimleri](https://longhorn.io/docs/1.12.1/deploy/install/) ve [disk etiketi](https://longhorn.io/kb/tip-only-use-storage-on-a-set-of-nodes/) ayrıntıları için resmi belgelere bakın.
+- İstemcide kullanılan `*.bank.local` host adları ingress-nginx LoadBalancer adresine çözülmeli. `config/coredns-custom.yaml` içindeki `auth.bank.local` IP'si de bu adresle eşleşmeli.
+- TLS sertifikası kullanılan host adlarını kapsamalı. Sertifikayı imzalayan CA, istemcide güvenilir olmalı ve frontend için kullanılan `config/root-ca.pem` ile eşleşmeli. Repodaki dosya CA sertifikasıdır; özel anahtarı içermez.
 
-### Ön Koşullar
+## İlk kurulum
 
-* K3s (veya standart K8s) 1 Master + 2 Worker topolojisinde kurulu olmalıdır.
-* Cluster'da **Longhorn** depolama çözümü kurulu olmalıdır (StorageClass: `longhorn`).
-* Ingress Controller (Nginx) kurulu olmalıdır.
-* Lokal bilgisayarınızın `/etc/hosts` (veya `C:\Windows\System32\drivers\etc\hosts`) dosyasına aşağıdaki domainler eklenmelidir:
-    `127.0.0.1 app.bank.local api.bank.local auth.bank.local eureka.bank.local monitor.bank.local docs.bank.local longhorn.bank.local`
+Komutları depo kökünden çalıştırın. Bu adımlar mevcut lab kurulumuna göre hazırlanmıştır; yeni bir cluster üzerinde baştan sona tekrar doğrulanmış bir kurulum testi değildir. Her aşamada kaynakların hazır olduğunu kontrol edin.
 
-### Adım 1: Güvenlik Yapılandırması (Secrets)
+### 1. Namespace ve Longhorn
 
-Gerçek şifreler güvenlik gereği repoda tutulmamaktadır. Kendi sırlarınızı (secrets) oluşturmalısınız:
+Worker adlarını kendi ortamınıza göre seçin. Etiketleme, Longhorn yeni node'larda varsayılan disk oluştururken kullanılır; mevcut disk yapılandırmasını yeniden oluşturmaz.
 
 ```bash
-cp 00-infrastructure/bank-secret.example.yaml 00-infrastructure/bank-secret.yaml
+kubectl apply -f config/namespace.yaml
+kubectl label node k8s-worker1 k8s-worker2 node.longhorn.io/create-default-disk=true --overwrite
+kubectl apply -f config/longhorn.yaml
+kubectl get pods -n longhorn-system
+kubectl get nodes.longhorn.io -n longhorn-system
 ```
-Oluşturduğunuz `bank-secret.yaml` dosyasını açın ve içindeki veritabanı, Keycloak ve Grafana şifrelerinizi belirleyin.
-*(Not: `KEYCLOAK_CLIENT_SECRET` alanını şimdilik boş bırakın, Adım 3'te dolduracağız).*
 
-### Adım 2: Deployment Sırası
+Devam etmeden önce Longhorn bileşenlerinin ve iki worker disklerinin hazır/schedulable olduğundan emin olun. `config/longhorn.yaml` chart'ı arka planda kurar; bu işlem biraz sürebilir.
 
-Bağımlılıkların doğru ayağa kalkması için altyapıyı aşağıdaki sırayla cluster'ınıza uygulayın:
+### 2. Ayarlar ve Secret'lar
+
+Örnekleri yerel dosyalara kopyalayın ve değerleri doldurun. `cp -n`, mevcut yerel dosyanın üzerine yazmaz. Realm client secret değerleri ile uygulama servislerinin kullandığı değerler aynı olmalıdır; reCAPTCHA değeri ilgili sağlayıcıdan alınır.
 
 ```bash
-kubectl apply -f 00-infrastructure/
-kubectl apply -f 01-backing-services/
-kubectl apply -f 02-enterprise-core/
-kubectl apply -f 03-microservices/
-kubectl apply -f 04-frontend/
-kubectl apply -f 05-ingress/
-kubectl apply -f 06-observability/
+cp -n config/secrets.example.yaml config/bank-demo-secrets.yaml
+cp -n config/grafana-secret.example.yaml config/grafana-secret.yaml
 ```
-*Sistem ayağa kalkarken mikroservislerin Readiness Probe'ları devreye girecek ve uygulamalar tam olarak hazır olana kadar Nginx Ingress trafiği bekletecektir (Bu işlem donanıma bağlı olarak 5-10 dk sürebilir).*
 
-### Adım 3: Keycloak Yapılandırması (Zorunlu İlk Kurulum)
+Gerçek `config/bank-demo-secrets.yaml`, `config/grafana-secret.yaml` ve varsa `config/tls-secrets.yaml` Git tarafından ignore edilir. Örnek dosyaları doğrudan uygulamayın. `kubectl apply -f config/` de kullanmayın: dizinde hem örnekler hem de yerel Secret dosyaları bulunabilir.
 
-Sistem ayağa kalktıktan sonra, mikroservislerin Zero-Trust mimarisinde kimlik doğrulama yapabilmesi için Keycloak üzerinde aşağıdaki adımlar izlenmelidir:
-
-1.  **Giriş:** Tarayıcıdan `https://auth.bank.local` adresine gidin. `bank-secret.yaml` içinde belirlediğiniz `KC_ADMIN_USER` ve şifresi ile giriş yapın.
-2.  **Realm Oluşturma:** Sol üst menüden **Create Realm** diyerek `bank-realm` adında bir realm açın.
-3.  **Client Oluşturma:** Sol menüden **Clients -> Create client** diyerek `bank-auth-client` adında bir istemci oluşturun. *Capability config* sayfasında **Client authentication** ve **Service accounts roles** seçeneklerini **ON** yapın.
-4.  **Servis İzinlerini Atama (Kritik):** Auth mikroservisinin Keycloak ile API üzerinden haberleşebilmesi için yetki vermemiz gerekir. `bank-auth-client` detaylarındayken **Service accounts roles** sekmesine tıklayın. *Assign role* butonuna basıp filtreyi *Filter by clients* yapın. Çıkan listeden `realm-management` istemcisine ait **`view-users`**, **`manage-users`** ve **`view-realm`** rollerini seçerek atayın.
-5.  **Rolleri Tanımlama:** Sol menüden **Realm roles -> Create role** diyerek büyük harflerle şu 3 rolü ekleyin: `ADMIN`, `RETAIL_CUSTOMER`, `CORPORATE_MANAGER`.
-6.  **Secret Kopyalama:** `bank-auth-client` detay sayfasında **Credentials** sekmesindeki **Client Secret** değerini kopyalayın.
-
-**Son Adım (Uygulamaları Güncelleme):**
-Kopyaladığınız Secret değerini `bank-secret.yaml` dosyasındaki `KEYCLOAK_CLIENT_SECRET` alanına yapıştırın. Ardından Secret'ı ve ona bağlı podları K8s üzerinde güncelleyin:
+TLS sertifikası ve anahtarı yerel dosyalardaysa, yolları kendi ortamınıza göre belirleyip Secret'ı üç namespace için oluşturun. Mevcut yerel `config/tls-secrets.yaml` dosyanız zaten hazırlanmışsa bunun yerine onu uygulayabilirsiniz.
 
 ```bash
-kubectl apply -f 00-infrastructure/bank-secret.yaml
-kubectl rollout restart deployment api-gateway auth-service frontend
+TLS_CERT=/guvenli/yol/bank-local.crt
+TLS_KEY=/guvenli/yol/bank-local.key
+for ns in default bank-demo longhorn-system; do
+  kubectl create secret tls bank-local-tls -n "$ns" \
+    --cert="$TLS_CERT" --key="$TLS_KEY" \
+    --dry-run=client -o yaml | kubectl apply -f -
+done
 ```
 
-### Adım 4: İlk Admin Kullanıcısını Yetkilendirme
-
-Sistem tamamen ayağa kalkıp uygulamalar güncellendikten sonra, frontend arayüzünden (`https://app.bank.local`) kayıt ekranını kullanarak kendiniz için ilk müşteri kaydını oluşturun (Örn: TC Kimlik No `11111111111`).
-
-Kayıt işlemi bittikten sonra bu kullanıcıyı sistem yöneticisi (ADMIN) yapmak ve hesabını onaylamak için veritabanına pod üzerinden doğrudan müdahale etmemiz gerekmektedir. Terminalinizde aşağıdaki komutu çalıştırarak kullanıcınızı yetkilendirin:
+Ingress IP'sini `config/coredns-custom.yaml` içinde kontrol ettikten sonra ayarları ve Secret'ları uygulayın. Realm, CA ve dashboard ConfigMap'leri depodaki dosyalardan oluşturulur:
 
 ```bash
-kubectl exec -it $(kubectl get pod -l app=postgres-auth -o jsonpath='{.items[0].metadata.name}') -- psql -U postgres -d bank_auth_db -c "UPDATE app_users SET role = 'ADMIN', status = 'APPROVED' WHERE identity_number = '11111111111';"
+kubectl apply -f config/config.yaml
+kubectl apply -f config/coredns-custom.yaml
+kubectl apply -f config/bank-demo-secrets.yaml
+kubectl apply -f config/grafana-secret.yaml
+kubectl create configmap bank-root-ca -n bank-demo --from-file=root-ca.pem=config/root-ca.pem --dry-run=client -o yaml | kubectl apply -f -
+kubectl create configmap bank-realm -n bank-demo --from-file=bank-realm-realm.json=dependencies/realm.json --dry-run=client -o yaml | kubectl apply -f -
+kubectl create configmap bank-grafana-dashboards -n default --from-file=monitoring/dashboards --dry-run=client -o yaml | kubectl apply --server-side -f -
 ```
 
-Bu işlemden sonra belirlediğiniz şifre ile arayüze giriş yapabilir ve tüm bankacılık platformunu yönetmeye başlayabilirsiniz.
+Dashboard ConfigMap'i büyük olduğu için son komutta server-side apply kullanılır. Keycloak realm'i başlangıçta içe aktarır; realm veritabanında zaten varsa dosyadaki değişiklikler kendiliğinden uygulanmaz.
+
+### 3. Veri ve servisler
+
+Önce veritabanlarını oluşturun; beş PostgreSQL Pod'u `1/1 Running` ve PVC'leri `Bound` olana kadar bekleyin:
+
+```bash
+kubectl apply -f data/postgres.yaml
+kubectl get pods,pvc -n bank-demo
 ```
 
-Sisteminiz kullanıma ve test edilmeye tamamen hazırdır!# bank-kubernetes
+Sonra bağımlılıkları başlatın. Keycloak hazır olduktan sonra uygulama servislerine geçin:
+
+```bash
+kubectl apply -f monitoring/logging.yaml
+kubectl apply -f dependencies/messaging.yaml
+kubectl apply -f dependencies/eureka.yaml
+kubectl apply -f dependencies/keycloak.yaml
+kubectl rollout status deployment/keycloak -n bank-demo --timeout=8m
+```
+
+```bash
+kubectl apply -f services/bank-services.yaml
+kubectl apply -f services/gateway.yaml
+kubectl apply -f services/frontend.yaml
+kubectl apply -f monitoring/monitoring.yaml
+kubectl apply -f ingress/ingress.yaml
+```
+
+Grafana ve Prometheus `default`, banka servisleri ve loglama `bank-demo`, Longhorn `longhorn-system` namespace'indedir.
+
+## Kontrol ve erişim
+
+```bash
+kubectl get deployments,statefulsets,pods,pvc -n bank-demo
+kubectl get deployment,pods,pvc -n default
+kubectl get ingress -n bank-demo
+kubectl get ingress -n default
+```
+
+Uygulama ve veritabanı Pod'larında `READY 1/1`, PVC'lerde `Bound` beklenir. Başlangıç sırasında geçici `ContainerCreating` veya `0/1` görülebilir. Bir Pod hazır kalmıyorsa `kubectl describe pod <pod-adı> -n <namespace>` ve `kubectl logs <pod-adı> -n <namespace>` ile nedeni incelenebilir.
+
+| Adres | Bileşen |
+| --- | --- |
+| `https://app.bank.local` | Bank-Demo frontend |
+| `https://auth.bank.local` | Keycloak |
+| `https://api.bank.local`, `https://docs.bank.local` | API Gateway |
+| `https://eureka.bank.local` | Eureka |
+| `https://monitor.bank.local` | Grafana |
+| `https://longhorn.bank.local` | Longhorn |
+
+İlk banka yöneticisi, auth-service başlangıcında bootstrap Secret'ındaki bilgilerle oluşturulur. Mevcut kullanıcıların veya veritabanlarının parolasını değiştirmek için yalnızca Secret'ı değiştirmek yeterli değildir.
+
+## Uygulama imajlarını güncelleme
+
+```bash
+python3 images.py
+python3 images.py --write
+git diff
+```
+
+İlk komut Docker Hub'daki uygun Linux/amd64 SHA etiketlerini gösterir. `--write`, seçilen etiketleri yerel manifestlere yazar. Her servis için en yeni etiket ayrı seçilir; betik ortak bir sürümün uyumluluğunu doğrulamaz. Değişiklikleri inceledikten sonra ilgili manifestleri `kubectl apply` ile uygulayın. Docker Hub'a yeni imaj gönderilmesi tek başına Kubernetes rollout'u başlatmaz.
+
+## Veri ve temizlik
+
+PostgreSQL ve Grafana PVC'leri Longhorn'da iki kopyalı, `Retain` politikasıyla oluşturulur. PVC silinse bile PV ve Longhorn volume'u kalabilir. Prometheus ve Elasticsearch verileri kalıcı PVC kullanmaz. Temizlik veya yeniden kurulumdan önce mevcut PV/PVC ve Longhorn volume'larını ayrıca değerlendirin.
+
+## Kaynaklar
+
+- [Kubernetes: workload yönetimi ve kubectl apply](https://kubernetes.io/docs/concepts/workloads/management/)
+- [K3s: Helm Controller](https://docs.k3s.io/helm)
+- [Keycloak: realm içe ve dışa aktarma](https://www.keycloak.org/server/importExport)

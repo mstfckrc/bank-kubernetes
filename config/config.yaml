@@ -1,0 +1,28 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: bank-config
+  namespace: bank-demo
+data:
+  NEXT_PUBLIC_FRONTEND_URL: https://app.bank.local
+  OAUTH_ISSUER_URI: https://auth.bank.local/realms/bank-realm
+  EUREKA_URL: http://discovery-server:8761/eureka/
+  ES_URL: http://elasticsearch:9200
+  KC_INTERNAL_URL: http://keycloak:8080
+  RMQ_HOST: rabbitmq
+  RMQ_PORT: '5672'
+  REDIS_HOST: redis
+  REDIS_PORT: '6379'
+  CORE_DB_URL: jdbc:postgresql://postgres-core:5432/bank_core_db
+  AUTH_DB_URL: jdbc:postgresql://postgres-auth:5432/bank_auth_db
+  BILL_DB_URL: jdbc:postgresql://postgres-bill:5432/bank_bill_db
+  CORP_DB_URL: jdbc:postgresql://postgres-corporate:5432/bank_corporate_db
+  KC_DB_URL: jdbc:postgresql://keycloak-db:5432/keycloak
+  GATEWAY_CORS_ALLOWED_ORIGINS: https://app.bank.local
+  OAUTH_JWK_SET_URI: http://keycloak:8080/realms/bank-realm/protocol/openid-connect/certs
+  BANK_SERVICE_TOKEN_URI: http://keycloak:8080/realms/bank-realm/protocol/openid-connect/token
+  OAUTH_AUDIENCE: bank-api
+  BFF_API_BASE_URL: http://api-gateway:8081/api/v1
+  KEYCLOAK_ADMIN_CLIENT_ID: bank-auth-admin
+  FRONTEND_KEYCLOAK_CLIENT_ID: bank-auth-client
+  BANK_BOOTSTRAP_ADMIN_ENABLED: 'true'

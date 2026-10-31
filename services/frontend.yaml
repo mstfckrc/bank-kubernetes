@@ -1,0 +1,100 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: frontend
+  namespace: bank-demo
+spec:
+  replicas: 1
+  selector:
+    matchLabels: &id001
+      app: frontend
+  template:
+    metadata:
+      labels: *id001
+    spec:
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+            - matchExpressions:
+              - key: node-role.kubernetes.io/control-plane
+                operator: DoesNotExist
+      containers:
+      - name: frontend
+        image: docker.io/mstfckrc/frontend:sha-96d5690fc0a030d59ecff76dff136f759fc0308a
+        ports:
+        - name: http
+          containerPort: 3000
+        env:
+        - name: NEXT_PUBLIC_FRONTEND_URL
+          valueFrom:
+            configMapKeyRef:
+              name: bank-config
+              key: NEXT_PUBLIC_FRONTEND_URL
+        - name: KEYCLOAK_CLIENT_ID
+          valueFrom:
+            configMapKeyRef:
+              name: bank-config
+              key: FRONTEND_KEYCLOAK_CLIENT_ID
+        - name: KEYCLOAK_CLIENT_SECRET
+          valueFrom:
+            secretKeyRef:
+              name: bank-demo-client-credentials
+              key: KEYCLOAK_CLIENT_SECRET
+        - name: OAUTH_ISSUER_URI
+          valueFrom:
+            configMapKeyRef:
+              name: bank-config
+              key: OAUTH_ISSUER_URI
+        - name: BFF_API_BASE_URL
+          valueFrom:
+            configMapKeyRef:
+              name: bank-config
+              key: BFF_API_BASE_URL
+        - name: BFF_SESSION_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: bank-demo-frontend
+              key: BFF_SESSION_PASSWORD
+        - name: NODE_EXTRA_CA_CERTS
+          value: /etc/bank/root-ca.pem
+        resources:
+          requests:
+            cpu: 100m
+            memory: 128Mi
+          limits:
+            memory: 384Mi
+        startupProbe:
+          httpGet:
+            path: /
+            port: http
+          periodSeconds: 10
+          failureThreshold: 30
+        readinessProbe:
+          httpGet:
+            path: /
+            port: http
+          periodSeconds: 15
+          timeoutSeconds: 5
+        volumeMounts:
+        - name: root-ca
+          mountPath: /etc/bank/root-ca.pem
+          subPath: root-ca.pem
+          readOnly: true
+      volumes:
+      - name: root-ca
+        configMap:
+          name: bank-root-ca
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: frontend
+  namespace: bank-demo
+spec:
+  selector:
+    app: frontend
+  ports:
+  - name: http
+    port: 3000
+    targetPort: http

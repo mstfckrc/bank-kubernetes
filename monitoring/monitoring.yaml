@@ -1,0 +1,355 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: bank-monitoring-config
+  namespace: default
+data:
+  prometheus.yml: "global:\n  scrape_interval: 15s\n  evaluation_interval: 15s\nrule_files:\n\
+    - /etc/prometheus/alert.rules.yml\nscrape_configs:\n- job_name: prometheus\n \
+    \ static_configs:\n  - targets:\n    - localhost:9090\n- job_name: node_exporter\n\
+    \  kubernetes_sd_configs:\n  - role: pod\n    namespaces:\n      names:\n    \
+    \  - default\n  relabel_configs:\n  - source_labels:\n    - __meta_kubernetes_pod_label_app\n\
+    \    action: keep\n    regex: node-exporter-bank\n  - source_labels:\n    - __meta_kubernetes_pod_container_port_name\n\
+    \    action: keep\n    regex: metrics\n  - source_labels:\n    - __meta_kubernetes_pod_node_name\n\
+    \    target_label: node\n- job_name: bank_microservices\n  metrics_path: /actuator/prometheus\n\
+    \  kubernetes_sd_configs:\n  - role: pod\n    namespaces:\n      names:\n    \
+    \  - bank-demo\n  relabel_configs:\n  - source_labels:\n    - __meta_kubernetes_pod_label_app\n\
+    \    action: keep\n    regex: api-gateway|backend|auth-service|bill-service|corporate-service|currency-service|notification-service|discovery-server\n\
+    \  - source_labels:\n    - __meta_kubernetes_pod_container_port_name\n    action:\
+    \ keep\n    regex: http\n  - source_labels:\n    - __meta_kubernetes_pod_label_app\n\
+    \    target_label: service\n- job_name: cadvisor\n  scheme: https\n  bearer_token_file:\
+    \ /var/run/secrets/kubernetes.io/serviceaccount/token\n  tls_config:\n    ca_file:\
+    \ /var/run/secrets/kubernetes.io/serviceaccount/ca.crt\n  kubernetes_sd_configs:\n\
+    \  - role: node\n  relabel_configs:\n  - target_label: __address__\n    replacement:\
+    \ kubernetes.default.svc:443\n  - source_labels:\n    - __meta_kubernetes_node_name\n\
+    \    target_label: __metrics_path__\n    regex: (.+)\n    replacement: /api/v1/nodes/$1/proxy/metrics/cadvisor\n\
+    \  - source_labels:\n    - __meta_kubernetes_node_name\n    target_label: instance\n"
+  alert.rules.yml: "groups:\n  - name: KarargahAlarmlari\n    rules:\n      - alert:\
+    \ KonteynerCoktu\n        expr: up == 0\n        for: 1m\n        labels:\n  \
+    \        severity: critical\n        annotations:\n          summary: \"Kritik\
+    \ Hata: Konteyner kapandı!\"\n          description: \"Karargahtaki '{{ $labels.instance\
+    \ }}' isimli servis 1 dakikadır çevrimdışı.\"\n\n      - alert: YuksekCpuKullanimi\n\
+    \        expr: 100 - (avg by(instance) (rate(node_cpu_seconds_total{mode=\"idle\"\
+    }[5m])) * 100) > 90\n        for: 5m\n        labels:\n          severity: warning\n\
+    \        annotations:\n          summary: \"Uyarı: Yüksek CPU Kullanımı!\"\n \
+    \         description: \"Ubuntu VM işlemci yükü 5 dakikadır %90'ın üzerinde (Şu\
+    \ an: {{ $value }}%).\"\n\n      - alert: KritikRamSeviyesi\n        expr: (node_memory_MemTotal_bytes\
+    \ - node_memory_MemAvailable_bytes) / node_memory_MemTotal_bytes * 100 > 95\n\
+    \        for: 3m\n        labels:\n          severity: critical\n        annotations:\n\
+    \          summary: \"Kritik Hata: RAM Tükeniyor!\"\n          description: \"\
+    Ubuntu VM bellek doluluğu 3 dakikadır %95'in üzerinde (Şu an: {{ $value }}%).\"\
+    \n\n      - alert: KokDiskAlaniAzaliyor\n        expr: 100 * (1 - (node_filesystem_avail_bytes{job=\"\
+    node_exporter\",mountpoint=\"/\",fstype!~\"tmpfs|overlay|squashfs\"} / node_filesystem_size_bytes{job=\"\
+    node_exporter\",mountpoint=\"/\",fstype!~\"tmpfs|overlay|squashfs\"})) > 85\n\
+    \        for: 5m\n        labels:\n          severity: warning\n        annotations:\n\
+    \          summary: \"Uyarı: Kök disk alanı azalıyor.\"\n          description:\
+    \ \"{{ $labels.instance }} kök dosya sisteminin kullanımı 5 dakikadır %85'in üzerinde\
+    \ (Şu an: {{ $value }}%).\"\n\n      - alert: KritikKokDiskAlani\n        expr:\
+    \ 100 * (1 - (node_filesystem_avail_bytes{job=\"node_exporter\",mountpoint=\"\
+    /\",fstype!~\"tmpfs|overlay|squashfs\"} / node_filesystem_size_bytes{job=\"node_exporter\"\
+    ,mountpoint=\"/\",fstype!~\"tmpfs|overlay|squashfs\"})) > 95\n        for: 2m\n\
+    \        labels:\n          severity: critical\n        annotations:\n       \
+    \   summary: \"Kritik: Kök disk alanı tükeniyor.\"\n          description: \"\
+    {{ $labels.instance }} kök dosya sisteminin kullanımı 2 dakikadır %95'in üzerinde\
+    \ (Şu an: {{ $value }}%).\"\n"
+  datasource.yml: "apiVersion: 1\ndatasources:\n- name: Bank-Demo Prometheus\n  uid:\
+    \ bank-demo-prometheus\n  type: prometheus\n  access: proxy\n  url: http://prometheus-bank:9090\n\
+    \  isDefault: true\n  editable: false\n  jsonData:\n    timeInterval: 15s\n"
+  provider.yml: "apiVersion: 1\nproviders:\n- name: bank-demo\n  orgId: 1\n  folder:\
+    \ Bank-Demo\n  folderUid: bank-demo\n  type: file\n  disableDeletion: true\n \
+    \ allowUiUpdates: false\n  updateIntervalSeconds: 30\n  options:\n    path: /var/lib/grafana/bank-demo-dashboards\n"
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: prometheus-bank
+  namespace: default
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: prometheus-bank-discovery
+rules:
+- apiGroups:
+  - ''
+  resources:
+  - pods
+  - nodes
+  verbs:
+  - get
+  - list
+  - watch
+- apiGroups:
+  - ''
+  resources:
+  - nodes/proxy
+  verbs:
+  - get
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: prometheus-bank-discovery
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: prometheus-bank-discovery
+subjects:
+- kind: ServiceAccount
+  name: prometheus-bank
+  namespace: default
+---
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: monitoring-longhorn-retain
+provisioner: driver.longhorn.io
+allowVolumeExpansion: true
+reclaimPolicy: Retain
+volumeBindingMode: Immediate
+parameters:
+  numberOfReplicas: '2'
+  fsType: ext4
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: pvc-grafana
+  namespace: default
+spec:
+  accessModes:
+  - ReadWriteOnce
+  storageClassName: monitoring-longhorn-retain
+  resources:
+    requests:
+      storage: 1Gi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: prometheus-bank
+  namespace: default
+spec:
+  replicas: 1
+  selector:
+    matchLabels: &id001
+      app: prometheus-bank
+  template:
+    metadata:
+      labels: *id001
+    spec:
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+            - matchExpressions:
+              - key: node-role.kubernetes.io/control-plane
+                operator: DoesNotExist
+      containers:
+      - name: prometheus
+        image: prom/prometheus:v3.5.0
+        args:
+        - --config.file=/etc/prometheus/prometheus.yml
+        - --storage.tsdb.path=/prometheus
+        - --storage.tsdb.retention.time=3d
+        ports:
+        - name: http
+          containerPort: 9090
+        resources:
+          requests:
+            cpu: 100m
+            memory: 256Mi
+          limits:
+            memory: 1Gi
+        readinessProbe:
+          httpGet:
+            path: /-/ready
+            port: http
+          periodSeconds: 15
+        volumeMounts:
+        - name: config
+          mountPath: /etc/prometheus
+          readOnly: true
+        - name: data
+          mountPath: /prometheus
+      volumes:
+      - name: config
+        configMap:
+          name: bank-monitoring-config
+          items:
+          - key: prometheus.yml
+            path: prometheus.yml
+          - key: alert.rules.yml
+            path: alert.rules.yml
+      - name: data
+        emptyDir: {}
+      serviceAccountName: prometheus-bank
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: prometheus-bank
+  namespace: default
+spec:
+  selector:
+    app: prometheus-bank
+  ports:
+  - name: http
+    port: 9090
+    targetPort: http
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: grafana
+  namespace: default
+spec:
+  replicas: 1
+  selector:
+    matchLabels: &id001
+      app: grafana
+  template:
+    metadata:
+      labels: *id001
+    spec:
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+            - matchExpressions:
+              - key: node-role.kubernetes.io/control-plane
+                operator: DoesNotExist
+      containers:
+      - name: grafana
+        image: grafana/grafana:12.2.0
+        ports:
+        - name: http
+          containerPort: 3000
+        env:
+        - name: GF_SECURITY_ADMIN_USER
+          valueFrom:
+            secretKeyRef:
+              name: grafana-admin
+              key: username
+        - name: GF_SECURITY_ADMIN_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: grafana-admin
+              key: password
+        resources:
+          requests:
+            cpu: 100m
+            memory: 256Mi
+          limits:
+            memory: 768Mi
+        readinessProbe:
+          httpGet:
+            path: /api/health
+            port: http
+          periodSeconds: 15
+        volumeMounts:
+        - name: grafana-data
+          mountPath: /var/lib/grafana
+        - name: config
+          mountPath: /etc/grafana/provisioning/datasources/bank-demo.yml
+          subPath: datasource.yml
+          readOnly: true
+        - name: config
+          mountPath: /etc/grafana/provisioning/dashboards/bank-demo.yml
+          subPath: provider.yml
+          readOnly: true
+        - name: dashboards
+          mountPath: /var/lib/grafana/bank-demo-dashboards
+          readOnly: true
+      volumes:
+      - name: grafana-data
+        persistentVolumeClaim:
+          claimName: pvc-grafana
+      - name: config
+        configMap:
+          name: bank-monitoring-config
+      - name: dashboards
+        configMap:
+          name: bank-grafana-dashboards
+      securityContext:
+        fsGroup: 472
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: grafana
+  namespace: default
+spec:
+  selector:
+    app: grafana
+  ports:
+  - name: http
+    port: 3000
+    targetPort: http
+---
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: node-exporter-bank
+  namespace: default
+spec:
+  selector:
+    matchLabels: &id001
+      app: node-exporter-bank
+  template:
+    metadata:
+      labels: *id001
+    spec:
+      hostPID: true
+      hostNetwork: true
+      dnsPolicy: ClusterFirstWithHostNet
+      tolerations:
+      - operator: Exists
+      containers:
+      - name: node-exporter
+        image: quay.io/prometheus/node-exporter:v1.8.0
+        args:
+        - --path.rootfs=/host
+        ports:
+        - name: metrics
+          containerPort: 9100
+        resources:
+          requests:
+            cpu: 50m
+            memory: 64Mi
+          limits:
+            memory: 256Mi
+        volumeMounts:
+        - name: root
+          mountPath: /host
+          mountPropagation: HostToContainer
+          readOnly: true
+      volumes:
+      - name: root
+        hostPath:
+          path: /
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: grafana
+  namespace: default
+  annotations:
+    nginx.ingress.kubernetes.io/ssl-redirect: 'true'
+spec:
+  ingressClassName: nginx
+  tls:
+  - hosts:
+    - monitor.bank.local
+    secretName: bank-local-tls
+  rules:
+  - host: monitor.bank.local
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: grafana
+            port:
+              number: 3000
